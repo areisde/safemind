@@ -1,1 +1,4 @@
 .venv
+infra/.terraform
+infra/.terraform.lock.hcl
+infra/kv.plan
