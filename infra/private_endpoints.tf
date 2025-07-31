@@ -60,3 +60,37 @@ resource "azurerm_private_endpoint" "pe_dfs" {
     private_dns_zone_ids = [azurerm_private_dns_zone.dfs.id]
   }
 }
+
+resource "azurerm_private_endpoint" "pe_wsblob" {
+  name                = "pe-ws-blob"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  subnet_id           = azurerm_subnet.spoke_private_endpoints.id
+
+  private_service_connection {
+    name                           = "psc-ws-blob"
+    private_connection_resource_id = azurerm_storage_account.wsblob.id
+    subresource_names              = ["blob"]
+    is_manual_connection           = false
+  }
+
+  private_dns_zone_group {
+    name                 = "wsblob-dns"
+    private_dns_zone_ids = [azurerm_private_dns_zone.blob.id]
+  }
+}
+
+# Private endpoint to workspace control plane
+resource "azurerm_private_endpoint" "pe_aml" {
+  name                = "pe-aml-workspace"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  subnet_id           = azurerm_subnet.spoke_private_endpoints.id
+
+  private_service_connection {
+    name                           = "psc-aml"
+    private_connection_resource_id = azurerm_machine_learning_workspace.aml.id
+    subresource_names              = ["amlworkspace"]
+    is_manual_connection           = false
+  }
+}

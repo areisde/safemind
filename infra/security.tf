@@ -28,6 +28,13 @@ resource "azurerm_role_assignment" "kv_crypto_user" {
   principal_id         = azurerm_user_assigned_identity.datalake_uami.principal_id
 }
 
+# Permission: let ADF write to the lake
+resource "azurerm_role_assignment" "adf_storage_writer" {
+  scope                = azurerm_storage_account.datalake.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_data_factory.adf.identity[0].principal_id
+}
+
 resource "azurerm_key_vault_key" "cmk" {
   name         = "cmk-mlops-storage"
   key_vault_id = azurerm_key_vault.mlops_kv.id
