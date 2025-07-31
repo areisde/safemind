@@ -19,3 +19,11 @@ resource "azurerm_virtual_network_peering" "hub_to_spoke_ml" {
   remote_virtual_network_id = azurerm_virtual_network.spoke_ml.id
   allow_forwarded_traffic   = true
 }
+
+resource "azurerm_subnet" "spoke_private_endpoints" {
+  name                 = "snet-pe"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.spoke_ml.name
+  address_prefixes     = ["10.20.10.0/27"]      # free slice inside the spoke
+  private_endpoint_network_policies = "Enabled"
+}
