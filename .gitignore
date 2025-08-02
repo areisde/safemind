@@ -2,3 +2,5 @@
 infra/.terraform
 infra/.terraform.lock.hcl
 infra/kv.plan
+infra/envs/azure/dev/.terraform
+infra/envs/azure/dev/.terraform.lock.hcl
