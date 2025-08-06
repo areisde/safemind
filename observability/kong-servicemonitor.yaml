@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kong-proxy
+  namespace: llm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kong
+  namespaceSelector:
+    matchNames: ["llm"]
+  endpoints:
+  - port: metrics  # exposed by the plugin on port 9542 inside the pod
+    interval: 15s

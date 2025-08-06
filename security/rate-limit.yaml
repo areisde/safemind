@@ -1,0 +1,11 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: ratelimit-global
+  labels:
+    global: "true"           # make it apply to every route
+plugin: rate-limiting
+config:
+  minute: 100                # 100 requests per minute
+  policy: local              # in-memory counters; fine for dev / small
+  fault_tolerant: true       # allow traffic if counter storage fails

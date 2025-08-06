@@ -1,0 +1,7 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: metrics-global
+  labels: {global: "true"}
+plugin: prometheus
+config: {}

@@ -1,6 +1,312 @@
-.venv
+# ============================================================================
+# MLOps Project .gitignore
+# ============================================================================
+
+# ──────────────────────────────────────────────────────────────────────────
+# 🐍 Python
+# ──────────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# ──────────────────────────────────────────────────────────────────────────
+# 🚀 Infrastructure & Cloud
+# ──────────────────────────────────────────────────────────────────────────
+
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.backup
+.terraformrc
+terraform.rc
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
+# But allow examples and templates
+!*.tfvars.example
+!*.tfvars.template
+
+# Terraform specific to this project
 infra/.terraform
 infra/.terraform.lock.hcl
 infra/kv.plan
 infra/envs/azure/dev/.terraform
 infra/envs/azure/dev/.terraform.lock.hcl
+infra/envs/*/dev/.terraform*
+infra/envs/*/prod/.terraform*
+infra/envs/*/staging/.terraform*
+
+# Pulumi
+Pulumi.*.yaml
+.pulumi/
+
+# AWS
+.aws/
+aws-exports.js
+
+# Azure
+.azure/
+azure.yaml.backup
+
+# Google Cloud
+.gcloud/
+gcp-key.json
+service-account-key.json
+
+# ──────────────────────────────────────────────────────────────────────────
+# ☸️ Kubernetes & Container
+# ──────────────────────────────────────────────────────────────────────────
+
+# Kubernetes configs with secrets
+kubeconfig
+kube-config
+config
+*.kubeconfig
+# But allow templates
+!kubeconfig.template
+!kubeconfig.example
+
+# Helm
+charts/*/charts/
+charts/*/requirements.lock
+charts/*/.helmignore
+
+# Docker
+.dockerignore
+Dockerfile.local
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ──────────────────────────────────────────────────────────────────────────
+# 🔐 Secrets & Sensitive Files
+# ──────────────────────────────────────────────────────────────────────────
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.staging
+*.env
+
+# API Keys and credentials
+**/secrets/
+secrets.yaml
+secrets.yml
+secret.yaml
+secret.yml
+*-secret.yaml
+*-secret.yml
+**/secret.*
+api-keys.txt
+credentials.json
+credentials.yaml
+auth.json
+auth.yaml
+
+# Certificate files
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+
+# SSH keys
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+*.pub
+
+# GPG keys
+*.gpg
+*.asc
+
+# OAuth and tokens
+token
+*.token
+access_token
+refresh_token
+*_token.txt
+
+# Database passwords and URLs
+database.url
+db_password.txt
+connection_string.txt
+
+# ──────────────────────────────────────────────────────────────────────────
+# 📊 Logs & Monitoring
+# ──────────────────────────────────────────────────────────────────────────
+
+# Log files
+*.log
+logs/
+log/
+*.log.*
+
+# Monitoring and metrics
+metrics/
+traces/
+*.trace
+
+# ──────────────────────────────────────────────────────────────────────────
+# 🗂️ Temporary & Cache Files
+# ──────────────────────────────────────────────────────────────────────────
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+*.tmp
+*.temp
+.cache/
+cache/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor backup files
+*~
+*.swp
+*.swo
+.#*
+\#*#
+
+# ──────────────────────────────────────────────────────────────────────────
+# 🧪 Testing & Development
+# ──────────────────────────────────────────────────────────────────────────
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# Local development overrides
+values.local.yaml
+values.dev.yaml
+*-local.yaml
+*-dev.yaml
+local-config.yaml
+dev-config.yaml
+
+# Development databases
+*.db
+*.sqlite
+*.sqlite3
+
+# ──────────────────────────────────────────────────────────────────────────
+# 📦 Dependencies & Build Artifacts
+# ──────────────────────────────────────────────────────────────────────────
+
+# Node.js (if you add any JS tooling)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# ──────────────────────────────────────────────────────────────────────────
+# 🎯 Project-Specific
+# ──────────────────────────────────────────────────────────────────────────
+
+# Model artifacts (if you store models locally)
+models/
+*.pkl
+*.joblib
+*.h5
+*.pb
+checkpoints/
+
+# Data files (usually too large for git)
+data/
+datasets/
+*.csv
+*.parquet
+*.arrow
+
+# Backup files
+*.backup
+*.bak
+backup/
+
+# ──────────────────────────────────────────────────────────────────────────
+# ✅ Force Include Important Files (exceptions to above rules)
+# ──────────────────────────────────────────────────────────────────────────
+
+# Always include these even if they match patterns above
+!charts/*/templates/
+!**/README.md
+!docs/**
+!.github/
+!.gitkeep
+
+# Include sample/template files but not actual configs
+!*.template
+!*.example
+!*.sample
+!config.template.yaml
+!secrets.template.yaml

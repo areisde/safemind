@@ -1,0 +1,28 @@
+# Example terraform.tfvars for Azure MLOps deployment
+# Copy this file to terraform.tfvars and fill in your values
+
+# Azure subscription and location
+subscription_id = "your-azure-subscription-id-here"
+location       = "East US"  # or your preferred region
+
+# Resource naming
+project_name    = "mlops"
+environment     = "dev"
+resource_prefix = "your-initials"  # e.g., "jd" for John Doe
+
+# Kubernetes cluster configuration
+node_count         = 2
+node_vm_size      = "Standard_DS2_v2"
+kubernetes_version = "1.28"
+
+# Networking
+vnet_address_space     = ["10.0.0.0/16"]
+subnet_address_prefix  = "10.0.1.0/24"
+
+# Tags
+tags = {
+  Environment = "dev"
+  Project     = "mlops"
+  Owner       = "your-email@company.com"
+  Purpose     = "MLOps Platform"
+}

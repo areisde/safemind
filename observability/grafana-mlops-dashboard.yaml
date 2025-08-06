@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlops-logs-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  mlops-logs.json: |
+    {
+      "id": null,
+      "title": "MLOps Services Logs",
+      "tags": ["mlops", "logs"],
+      "style": "dark",
+      "timezone": "browser",
+      "panels": [
+        {
+          "title": "Guardrail Service Logs",
+          "type": "logs",
+          "targets": [
+            {
+              "expr": "{namespace=\"llm\", app=\"guardrail\"}",
+              "refId": "A"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0}
+        },
+        {
+          "title": "LLM-Proxy Service Logs",
+          "type": "logs", 
+          "targets": [
+            {
+              "expr": "{namespace=\"llm\", app=\"llm-proxy\"}",
+              "refId": "A"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+        },
+        {
+          "title": "Kong Gateway Logs",
+          "type": "logs",
+          "targets": [
+            {
+              "expr": "{namespace=\"llm\", app=\"kong\"}",
+              "refId": "A"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}
+        },
+        {
+          "title": "Error Logs Only",
+          "type": "logs",
+          "targets": [
+            {
+              "expr": "{namespace=\"llm\"} |~ \"(?i)(error|exception|failed|fatal)\"",
+              "refId": "A"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+        }
+      ],
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "refresh": "5s"
+    }

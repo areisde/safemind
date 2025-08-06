@@ -1,0 +1,10 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: reqsize-global
+  labels: {global: "true"}
+plugin: request-size-limiting
+config:
+  allowed_payload_size: 256      # kBytes
+  require_content_length: false  # still works with chunked
+  size_unit: kilobytes
