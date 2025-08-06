@@ -29,7 +29,6 @@ resource "azurerm_kubernetes_cluster" "this" {
     name                = "cpu"
     node_count          = var.min_nodes
     vm_size             = var.node_size
-    enable_auto_scaling = var.enable_auto_scaling
     min_count           = var.min_nodes
     max_count           = var.max_nodes
     vnet_subnet_id      = var.subnet_id
@@ -78,4 +77,15 @@ output "kube_ca" {
 output "kubeconfig" {
   value     = azurerm_kubernetes_cluster.this.kube_config_raw
   sensitive = true
+}
+
+# AKS Managed Identity for integration with other Azure services
+output "managed_identity_principal_id" {
+  description = "Principal ID of the AKS managed identity"
+  value       = azurerm_kubernetes_cluster.this.identity[0].principal_id
+}
+
+output "managed_identity_tenant_id" {
+  description = "Tenant ID of the AKS managed identity"
+  value       = azurerm_kubernetes_cluster.this.identity[0].tenant_id
 }

@@ -78,19 +78,42 @@ provider "helm" {
 #  replicas    = 1
 #}
 
-# ── 6) Azure OpenAI private endpoint (optional) ───────────────────────────────
-#module "llm_endpoint" {
-#  count          = var.enable_llm ? 1 : 0
-#  source         = "../../../modules/llm_endpoint"
-#  cloud          = "azure"
-#  namespace      = "llm"
-#  vnet_subnet_id = module.network.subnet_id
-#  aoai_name      = var.aoai_name
-#  aoai_deployment= var.aoai_deployment
-#}
+# ── 6) Azure OpenAI LLM endpoint ──────────────────────────────────────────────
+module "llm_endpoint" {
+  count  = var.enable_llm ? 1 : 0
+  source = "../../../modules/llm_endpoint/azure"
+  
+  name     = "mlops-dev"
+  location = var.location
+  suffix   = var.suffix
+  
+  # GPT-4o configuration
+  gpt4o_deployment_name = var.gpt4o_deployment_name
+  gpt4o_version        = var.gpt4o_version
+  gpt4o_capacity       = var.gpt4o_capacity
+  
+  tags = var.tags
+}
 
 # Convenience: write kubeconfig to file for local kubectl
 output "kubeconfig" {
   value     = module.k8s.kubeconfig
   sensitive = true
+}
+
+# Azure OpenAI outputs (when enabled)
+output "azure_openai_endpoint" {
+  description = "Azure OpenAI endpoint URL"
+  value       = var.enable_llm ? module.llm_endpoint[0].azure_openai_endpoint : null
+}
+
+output "azure_openai_api_key" {
+  description = "Azure OpenAI API key"
+  value       = var.enable_llm ? module.llm_endpoint[0].azure_openai_primary_key : null
+  sensitive   = true
+}
+
+output "gpt4o_deployment_name" {
+  description = "GPT-4o deployment name"
+  value       = var.enable_llm ? module.llm_endpoint[0].gpt4o_deployment_name : null
 }

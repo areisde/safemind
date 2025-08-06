@@ -19,44 +19,44 @@ data:
           "type": "logs",
           "targets": [
             {
-              "expr": "{namespace=\"llm\", app=\"guardrail\"}",
-              "refId": "A"
+              "expr": "{namespace=\"llm\", app_kubernetes_io_name=\"guardrail\"}",
+              "refId": "A",
+              "datasource": "Loki"
             }
           ],
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0}
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+          "options": {
+            "showTime": true,
+            "showLabels": false,
+            "showCommonLabels": false,
+            "wrapLogMessage": false,
+            "prettifyLogMessage": false,
+            "enableLogDetails": true,
+            "dedupStrategy": "none",
+            "sortOrder": "Descending"
+          }
         },
         {
           "title": "LLM-Proxy Service Logs",
           "type": "logs", 
           "targets": [
             {
-              "expr": "{namespace=\"llm\", app=\"llm-proxy\"}",
-              "refId": "A"
+              "expr": "{namespace=\"llm\", app_kubernetes_io_name=\"llm-proxy\"}",
+              "refId": "A",
+              "datasource": "Loki"
             }
           ],
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
-        },
-        {
-          "title": "Kong Gateway Logs",
-          "type": "logs",
-          "targets": [
-            {
-              "expr": "{namespace=\"llm\", app=\"kong\"}",
-              "refId": "A"
-            }
-          ],
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}
-        },
-        {
-          "title": "Error Logs Only",
-          "type": "logs",
-          "targets": [
-            {
-              "expr": "{namespace=\"llm\"} |~ \"(?i)(error|exception|failed|fatal)\"",
-              "refId": "A"
-            }
-          ],
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+          "options": {
+            "showTime": true,
+            "showLabels": false,
+            "showCommonLabels": false,
+            "wrapLogMessage": false,
+            "prettifyLogMessage": false,
+            "enableLogDetails": true,
+            "dedupStrategy": "none",
+            "sortOrder": "Descending"
+          }
         }
       ],
       "time": {

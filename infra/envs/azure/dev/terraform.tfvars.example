@@ -19,10 +19,21 @@ kubernetes_version = "1.28"
 vnet_address_space     = ["10.0.0.0/16"]
 subnet_address_prefix  = "10.0.1.0/24"
 
+# Feature toggles - enable services as needed
+enable_observability = true
+enable_gateway      = true
+enable_guardrail    = true
+enable_llm          = true  # Enable Azure OpenAI deployment
+
+# Azure OpenAI Configuration (only used if enable_llm = true)
+gpt4o_deployment_name = "gpt-4o"
+gpt4o_version        = "2024-08-06"
+gpt4o_capacity       = 10  # 10K tokens per minute
+
 # Tags
 tags = {
   Environment = "dev"
   Project     = "mlops"
   Owner       = "your-email@company.com"
-  Purpose     = "MLOps Platform"
+  Purpose     = "MLOps Platform with LLM"
 }

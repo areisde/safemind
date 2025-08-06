@@ -3,3 +3,4 @@ httpx
 uvicorn[standard]
 structlog
 python-json-logger
+litellm

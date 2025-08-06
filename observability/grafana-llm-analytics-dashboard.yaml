@@ -20,95 +20,47 @@ data:
       },
       "panels": [
         {
-          "title": "LLM Request Rate",
-          "type": "stat",
-          "targets": [
-            {
-              "expr": "rate({namespace=\"llm\", app=\"llm-proxy\"} |= \"llm_request_completed\" | json [5m])",
-              "refId": "A"
-            }
-          ],
-          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
-          "fieldConfig": {
-            "defaults": {
-              "unit": "reqps",
-              "color": {"mode": "thresholds"},
-              "thresholds": {
-                "steps": [
-                  {"color": "green", "value": 0},
-                  {"color": "yellow", "value": 5},
-                  {"color": "red", "value": 10}
-                ]
-              }
-            }
-          }
-        },
-        {
-          "title": "Total Tokens Used (Last Hour)",
-          "type": "stat",
-          "targets": [
-            {
-              "expr": "sum by () (sum_over_time({namespace=\"llm\", app=\"llm-proxy\"} |= \"llm_request_completed\" | json | unwrap total_tokens [1h]))",
-              "refId": "A"
-            }
-          ],
-          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
-          "fieldConfig": {
-            "defaults": {
-              "unit": "short",
-              "color": {"mode": "value", "fixedColor": "blue"}
-            }
-          }
-        },
-        {
-          "title": "Energy Consumption (kWh)",
-          "type": "stat",
-          "targets": [
-            {
-              "expr": "sum by () (sum_over_time({namespace=\"llm\", app=\"llm-proxy\"} |= \"llm_request_completed\" | json | unwrap energy_consumption_kwh [1h]))",
-              "refId": "A"
-            }
-          ],
-          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
-          "fieldConfig": {
-            "defaults": {
-              "unit": "kwatth",
-              "color": {"mode": "value", "fixedColor": "orange"}
-            }
-          }
-        },
-        {
-          "title": "Total Cost (USD)",
-          "type": "stat",
-          "targets": [
-            {
-              "expr": "sum by () (sum_over_time({namespace=\"llm\", app=\"llm-proxy\"} |= \"llm_request_completed\" | json | unwrap cost_usd [1h]))",
-              "refId": "A"
-            }
-          ],
-          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
-          "fieldConfig": {
-            "defaults": {
-              "unit": "currencyUSD",
-              "color": {"mode": "value", "fixedColor": "green"}
-            }
-          }
-        },
-        {
           "title": "LLM Request Logs",
           "type": "logs",
           "targets": [
             {
-              "expr": "{namespace=\"llm\", app=\"llm-proxy\"}",
-              "refId": "A"
+              "expr": "{namespace=\"llm\"} |= \"llm_request_completed\"",
+              "refId": "A",
+              "datasource": "Loki"
             }
           ],
-          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 4},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
           "options": {
             "showTime": true,
-            "showLabels": true,
-            "sortOrder": "Descending",
-            "wrapLogMessage": true
+            "showLabels": false,
+            "showCommonLabels": false,
+            "wrapLogMessage": false,
+            "prettifyLogMessage": false,
+            "enableLogDetails": true,
+            "dedupStrategy": "none",
+            "sortOrder": "Descending"
+          }
+        },
+        {
+          "title": "All LLM Namespace Logs", 
+          "type": "logs",
+          "targets": [
+            {
+              "expr": "{namespace=\"llm\"}",
+              "refId": "A",
+              "datasource": "Loki"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+          "options": {
+            "showTime": true,
+            "showLabels": false,
+            "showCommonLabels": false,
+            "wrapLogMessage": false,
+            "prettifyLogMessage": false,
+            "enableLogDetails": true,
+            "dedupStrategy": "none",
+            "sortOrder": "Descending"
           }
         }
       ]

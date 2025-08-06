@@ -43,11 +43,69 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.containerPort | default 8000 }}
-          {{- with .Values.env }}
           env:
+            # Azure OpenAI Configuration from Values (for local dev) or Secret (for production)
+            {{- if .Values.env.AZURE_OPENAI_ENDPOINT }}
+            - name: AZURE_OPENAI_ENDPOINT
+              value: {{ .Values.env.AZURE_OPENAI_ENDPOINT | quote }}
+            {{- else }}
+            - name: AZURE_OPENAI_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: azure-openai-config
+                  key: AZURE_OPENAI_ENDPOINT
+            {{- end }}
+            {{- if .Values.env.AZURE_OPENAI_API_KEY }}
+            - name: AZURE_OPENAI_API_KEY
+              value: {{ .Values.env.AZURE_OPENAI_API_KEY | quote }}
+            {{- else }}
+            - name: AZURE_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: azure-openai-config
+                  key: AZURE_OPENAI_API_KEY
+            {{- end }}
+            {{- if .Values.env.AZURE_OPENAI_DEPLOYMENT_NAME }}
+            - name: AZURE_OPENAI_DEPLOYMENT_NAME
+              value: {{ .Values.env.AZURE_OPENAI_DEPLOYMENT_NAME | quote }}
+            {{- else }}
+            - name: AZURE_OPENAI_DEPLOYMENT_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: azure-openai-config
+                  key: AZURE_OPENAI_DEPLOYMENT_NAME
+            {{- end }}
+            {{- if .Values.env.AZURE_OPENAI_API_VERSION }}
+            - name: AZURE_OPENAI_API_VERSION
+              value: {{ .Values.env.AZURE_OPENAI_API_VERSION | quote }}
+            {{- else }}
+            - name: AZURE_OPENAI_API_VERSION
+              valueFrom:
+                secretKeyRef:
+                  name: azure-openai-config
+                  key: AZURE_OPENAI_API_VERSION
+            {{- end }}
+            {{- if .Values.env.AZURE_OPENAI_MODEL }}
+            - name: AZURE_OPENAI_MODEL
+              value: {{ .Values.env.AZURE_OPENAI_MODEL | quote }}
+            {{- else }}
+            - name: AZURE_OPENAI_MODEL
+              valueFrom:
+                secretKeyRef:
+                  name: azure-openai-config
+                  key: AZURE_OPENAI_MODEL
+            {{- end }}
+            # Simple configuration
+            - name: LLM_PROVIDER
+              value: "azure"
+            - name: LOG_LEVEL
+              value: "INFO"
+          {{- with .Values.env }}
           {{- range $key, $value := . }}
+            {{- if not (has $key (list "AZURE_OPENAI_ENDPOINT" "AZURE_OPENAI_API_KEY" "AZURE_OPENAI_DEPLOYMENT_NAME" "AZURE_OPENAI_API_VERSION" "AZURE_OPENAI_MODEL")) }}
             - name: {{ $key }}
               value: {{ $value | quote }}
+            {{- end }}
           {{- end }}
           {{- end }}
           {{- with .Values.livenessProbe }}

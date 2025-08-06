@@ -147,10 +147,24 @@ show_access_info() {
     echo "Getting service endpoints..."
     kubectl --kubeconfig="$KUBECONFIG_PATH" get svc -A
     
+    # Check if LLM is enabled and update secret
+    cd infra/envs/azure/dev
+    ENABLE_LLM=$(terraform output -json | grep -o '"enable_llm".*true' || echo "")
+    cd - >/dev/null
+    
+    if [ -n "$ENABLE_LLM" ]; then
+        echo -e "\n${YELLOW}Setting up Azure OpenAI integration...${NC}"
+        ./scripts/update-azure-openai-secret.sh
+    fi
+    
     echo -e "\n${YELLOW}Next Steps:${NC}"
     echo "1. Run: ./scripts/open-dashboards.sh"
     echo "2. Test deployment: ./scripts/test-llm-analytics.sh"
     echo "3. Check services: kubectl --kubeconfig=$KUBECONFIG_PATH get pods -A"
+    
+    if [ -n "$ENABLE_LLM" ]; then
+        echo "4. Test Azure OpenAI: curl -X POST http://localhost:8001/generate -H 'Content-Type: application/json' -d '{\"prompt\":\"Hello!\",\"max_tokens\":50}'"
+    fi
     
     echo -e "\n${YELLOW}Documentation:${NC}"
     echo "- Full deployment guide: docs/DEPLOYMENT.md"

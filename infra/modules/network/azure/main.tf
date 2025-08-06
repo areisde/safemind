@@ -20,3 +20,11 @@ resource "azurerm_subnet" "workload" {
 output "subnet_id" {
   value = azurerm_subnet.workload.id
 }
+
+output "vnet_id" {
+  value = azurerm_virtual_network.vnet.id
+}
+
+output "resource_group_name" {
+  value = azurerm_resource_group.rg.name
+}

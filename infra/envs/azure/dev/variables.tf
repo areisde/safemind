@@ -38,19 +38,38 @@ variable "enable_llm" {
 }
 
 # ────────────────────────────────────────────────
-# Azure OpenAI (only meaningful if enable_llm=true)
+# Azure OpenAI Configuration (only meaningful if enable_llm=true)
 # ────────────────────────────────────────────────
-#variable "aoai_name" {
-#  description = "Name of existing Azure OpenAI resource"
-#  type        = string
-#  default     = ""          # leave blank until you enable LLM
-#}
 
-#variable "aoai_deployment" {
-#  description = "Deployment name inside the AOAI resource"
-#  type        = string
-#  default     = ""
-#}
+# Core naming and configuration
+variable "tags" {
+  description = "Tags to apply to all resources"
+  type        = map(string)
+  default = {
+    Environment = "dev"
+    Project     = "mlops"
+    ManagedBy   = "terraform"
+  }
+}
+
+# GPT-4o Model configuration
+variable "gpt4o_deployment_name" {
+  description = "Name for the GPT-4o deployment"
+  type        = string
+  default     = "gpt-4o"
+}
+
+variable "gpt4o_version" {
+  description = "Version of GPT-4o model to deploy"
+  type        = string
+  default     = "2024-08-06"
+}
+
+variable "gpt4o_capacity" {
+  description = "Capacity (TPM in thousands) for GPT-4o deployment"
+  type        = number
+  default     = 10
+}
 
 # ────────────────────────────────────────────────
 # Kubernetes cluster sizing

@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: azure-openai-config
+  namespace: llm
+type: Opaque
+stringData:
+  # These will be populated by Terraform outputs or manual configuration
+  AZURE_OPENAI_ENDPOINT: ""
+  AZURE_OPENAI_API_KEY: ""
+  AZURE_OPENAI_DEPLOYMENT_NAME: "gpt-4o"
+  AZURE_OPENAI_API_VERSION: "2024-08-01-preview"
+  AZURE_OPENAI_MODEL: "gpt-4o"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-proxy-config
+  namespace: llm
+data:
+  # LLM Provider Configuration
+  LLM_PROVIDER: "azure"
+  LOG_LEVEL: "INFO"
+  
+  # Cost tracking (update these with current Azure OpenAI pricing)
+  AZURE_OPENAI_INPUT_COST_PER_1K_TOKENS: "0.00250"  # $2.50 per 1M input tokens
+  AZURE_OPENAI_OUTPUT_COST_PER_1K_TOKENS: "0.01000" # $10.00 per 1M output tokens
+  
+  # Energy estimation (approximate values)
+  ENERGY_PER_1K_TOKENS_KWH: "0.001"  # Rough estimate: 1 Wh per 1K tokens
+---
+# Service Account for Azure Key Vault integration
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-proxy
+  namespace: llm
+  annotations:
+    # This will be populated with Azure managed identity info if using workload identity
+    azure.workload.identity/client-id: ""

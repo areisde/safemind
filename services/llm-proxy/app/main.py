@@ -1,9 +1,15 @@
-import os, httpx, fastapi, time, uuid, random
+import os
+import time
+import uuid
 import structlog
 import logging
 from datetime import datetime
 from pydantic import BaseModel
 from pythonjsonlogger import jsonlogger
+import fastapi
+
+# LiteLLM for provider-agnostic LLM calls
+import litellm
 
 # Configure structured logging
 logging.basicConfig(level=logging.INFO)
@@ -38,100 +44,120 @@ structlog.configure(
 
 metrics_logger = structlog.get_logger("llm-metrics")
 
-AOAI_ENDPOINT = os.getenv("AOAI_ENDPOINT")
-AOAI_KEY      = os.getenv("AOAI_KEY")
+# Azure OpenAI Configuration
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
+AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview")
 
-if not AOAI_ENDPOINT or not AOAI_KEY:
+# LLM Provider Configuration
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "azure")
+
+# Configure LiteLLM for Azure OpenAI
+if LLM_PROVIDER == "azure":
+    # Enable debug mode to see what's happening
+    os.environ['LITELLM_LOG'] = 'DEBUG'
+    
+    # Model mapping for Azure deployments - use the deployment name directly
+    model_name = f"azure/{AZURE_OPENAI_DEPLOYMENT_NAME}"
+else:
+    # For other providers (OpenAI, Anthropic, etc.)
+    litellm.api_key = os.getenv("OPENAI_API_KEY")
+    model_name = "gpt-4"
+
+# Validation
+if not AZURE_OPENAI_ENDPOINT or not AZURE_OPENAI_API_KEY:
     raise RuntimeError(
-        "Environment variables AOAI_ENDPOINT and AOAI_KEY must be set "
-        "for llm‑proxy to start."
+        "Environment variables AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY must be set "
+        "for llm-proxy to start."
     )
 
-app = fastapi.FastAPI()
+logger.info("LLM-Proxy starting", extra={
+           "provider": LLM_PROVIDER,
+           "endpoint": AZURE_OPENAI_ENDPOINT,
+           "deployment": AZURE_OPENAI_DEPLOYMENT_NAME,
+           "model": model_name
+})
 
-class ChatReq(BaseModel):
-    prompt: str
-    model: str = "gpt-4"
-    max_tokens: int = 150
+app = fastapi.FastAPI(title="LLM Proxy", description="Multi-Provider LLM Proxy with Analytics")
+
+# Request Models  
+class ChatMessage(BaseModel):
+    role: str  # "user", "assistant", "system"
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+    max_tokens: int = 4096
     temperature: float = 0.7
 
-def calculate_tokens(text: str) -> int:
-    """Simple token estimation - in production use tiktoken or similar"""
-    return len(text.split()) * 1.3  # Rough approximation
-
-def calculate_energy_consumption(tokens_used: int, model: str) -> float:
-    """Estimate energy consumption based on tokens and model"""
-    # Energy estimates in kWh per 1000 tokens (hypothetical values)
-    energy_rates = {
-        "gpt-4": 0.005,
-        "gpt-3.5-turbo": 0.002,
-        "gpt-4-turbo": 0.004,
-        "default": 0.003
-    }
-    rate = energy_rates.get(model, energy_rates["default"])
-    return (tokens_used / 1000) * rate
-
-def calculate_cost(input_tokens: int, output_tokens: int, model: str) -> float:
-    """Calculate cost based on OpenAI pricing"""
-    pricing = {
-        "gpt-4": {"input": 0.03, "output": 0.06},  # per 1k tokens
-        "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002},
-        "default": {"input": 0.01, "output": 0.02}
-    }
-    rates = pricing.get(model, pricing["default"])
-    return (input_tokens / 1000 * rates["input"]) + (output_tokens / 1000 * rates["output"])
-
 @app.post("/chat")
-async def chat(req: ChatReq):
+async def chat(req: ChatRequest):
     request_id = str(uuid.uuid4())
     start_time = time.time()
     
     # Log request start
     logger.info("LLM request started", extra={
         "request_id": request_id,
-        "model": req.model,
+        "model": model_name,
         "max_tokens": req.max_tokens,
         "temperature": req.temperature,
-        "prompt_length": len(req.prompt)
+        "message_count": len(req.messages)
     })
     
     try:
-        headers = {"api-key": AOAI_KEY, "Content-Type": "application/json"}
-        endpoint = AOAI_ENDPOINT
+        # Prepare messages for LiteLLM
+        messages = [{"role": msg.role, "content": msg.content} for msg in req.messages]
         
-        # Calculate input tokens
-        input_tokens = calculate_tokens(req.prompt)
+        # Calculate input tokens using LiteLLM (temporarily skip due to error)
+        logger.info("Calling token_counter", extra={"request_id": request_id, "model": model_name})
+        try:
+            input_tokens = litellm.token_counter(model=model_name, messages=messages)
+        except Exception as token_error:
+            logger.warning("Token counter failed, using estimate", extra={
+                "request_id": request_id, 
+                "token_error": str(token_error)
+            })
+            # Simple token estimation fallback
+            input_tokens = sum(len(msg["content"].split()) * 1.3 for msg in messages)
         
-        # Simulate LLM call (replace with actual call)
-        #async with httpx.AsyncClient() as cx:
-        #    r = await cx.post(AOAI_ENDPOINT, headers=headers, json=req.dict())
-        #    response_data = r.json()
+        # Make LLM call using LiteLLM with explicit Azure parameters
+        response = litellm.completion(
+            model=model_name,
+            messages=messages,
+            max_tokens=req.max_tokens,
+            temperature=req.temperature,
+            # Explicitly pass Azure parameters to ensure LiteLLM uses Azure
+            api_key=AZURE_OPENAI_API_KEY,
+            api_base=AZURE_OPENAI_ENDPOINT,
+            api_version=AZURE_OPENAI_API_VERSION,
+        )
         
-        # Mock response for demo
-        response_text = f"This is a mock response to: {req.prompt[:50]}... [Generated by {req.model}]"
-        response_data = {"choices": [{"message": {"content": response_text}}]}
-        
-        # Calculate metrics
-        output_tokens = calculate_tokens(response_text)
-        total_tokens = input_tokens + output_tokens
+        # Extract response data
+        response_content = response.choices[0].message.content
+        output_tokens = response.usage.completion_tokens
+        total_tokens = response.usage.total_tokens
         processing_time = time.time() - start_time
-        energy_consumption = calculate_energy_consumption(total_tokens, req.model)
-        cost = calculate_cost(input_tokens, output_tokens, req.model)
+        
+        # Calculate cost using LiteLLM's built-in cost tracking
+        cost = litellm.completion_cost(completion_response=response)
+        
+        # Energy estimation (simplified)
+        energy_consumption = (total_tokens / 1000) * float(os.getenv("ENERGY_PER_1K_TOKENS_KWH", "0.001"))
         
         # Log comprehensive metrics
         metrics_logger.info("llm_request_completed", 
             request_id=request_id,
-            model=req.model,
-            input_tokens=int(input_tokens),
-            output_tokens=int(output_tokens),
-            total_tokens=int(total_tokens),
+            model=model_name,
+            provider=LLM_PROVIDER,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
             processing_time_seconds=round(processing_time, 3),
             energy_consumption_kwh=round(energy_consumption, 6),
             cost_usd=round(cost, 4),
             temperature=req.temperature,
             max_tokens=req.max_tokens,
-            prompt_chars=len(req.prompt),
-            response_chars=len(response_text),
             timestamp=datetime.utcnow().isoformat(),
             status="success"
         )
@@ -140,19 +166,24 @@ async def chat(req: ChatReq):
         logger.info("LLM request completed successfully", extra={
             "request_id": request_id,
             "processing_time": round(processing_time, 3),
-            "total_tokens": int(total_tokens),
+            "total_tokens": total_tokens,
             "cost": round(cost, 4),
             "energy_kwh": round(energy_consumption, 6)
         })
         
         return {
-            "response": response_data,
-            "metadata": {
+            "id": response.id,
+            "object": response.object,
+            "created": response.created,
+            "model": response.model,
+            "choices": response.choices,
+            "usage": response.usage,
+            "analytics": {
                 "request_id": request_id,
-                "tokens_used": int(total_tokens),
-                "processing_time": round(processing_time, 3),
+                "processing_time_seconds": round(processing_time, 3),
                 "energy_consumption_kwh": round(energy_consumption, 6),
-                "cost_usd": round(cost, 4)
+                "cost_usd": round(cost, 4),
+                "provider": LLM_PROVIDER
             }
         }
         
@@ -168,7 +199,8 @@ async def chat(req: ChatReq):
         
         metrics_logger.error("llm_request_failed",
             request_id=request_id,
-            model=req.model,
+            model=model_name,
+            provider=LLM_PROVIDER,
             error=str(e),
             processing_time_seconds=round(processing_time, 3),
             timestamp=datetime.utcnow().isoformat(),
@@ -177,7 +209,35 @@ async def chat(req: ChatReq):
         
         raise fastapi.HTTPException(status_code=500, detail=f"LLM request failed: {str(e)}")
 
-
 @app.get("/healthz")
 async def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "provider": LLM_PROVIDER, "model": model_name}
+
+@app.get("/providers")
+async def get_providers():
+    """Get information about supported providers and current configuration"""
+    return {
+        "current_provider": LLM_PROVIDER,
+        "current_model": model_name,
+        "supported_providers": {
+            "azure": {
+                "description": "Azure OpenAI Service",
+                "models": ["gpt-4o", "gpt-4", "gpt-35-turbo"],
+                "required_env_vars": ["AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY"]
+            },
+            "openai": {
+                "description": "OpenAI API",
+                "models": ["gpt-4", "gpt-3.5-turbo", "gpt-4-turbo"],
+                "required_env_vars": ["OPENAI_API_KEY"]
+            },
+            "anthropic": {
+                "description": "Anthropic Claude",
+                "models": ["claude-3-opus", "claude-3-sonnet", "claude-3-haiku"],
+                "required_env_vars": ["ANTHROPIC_API_KEY"]
+            }
+        },
+        "configuration": {
+            "azure_endpoint": AZURE_OPENAI_ENDPOINT if LLM_PROVIDER == "azure" else None,
+            "azure_deployment": AZURE_OPENAI_DEPLOYMENT_NAME if LLM_PROVIDER == "azure" else None
+        }
+    }
