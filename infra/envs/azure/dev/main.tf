@@ -29,29 +29,98 @@ resource "azurerm_resource_group" "main" {
   }
 }
 
-# ── 2) Private AKS Cluster (only accessible via Front Door) ──────────────────
+# ── 2) Network Infrastructure ────────────────────────────────────────────────
+resource "azurerm_virtual_network" "main" {
+  name                = "vnet-mlops-dev"
+  address_space       = ["10.0.0.0/16"]
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+
+  tags = {
+    Environment = "dev"
+    Project     = "mlops"
+    Owner       = "reisdematos"
+  }
+}
+
+resource "azurerm_subnet" "aks" {
+  name                 = "subnet-aks"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = ["10.0.1.0/24"]
+}
+
+resource "azurerm_subnet" "runners" {
+  name                 = "subnet-runners"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = ["10.0.2.0/24"]
+  
+  delegation {
+    name = "aci-delegation"
+    service_delegation {
+      name    = "Microsoft.ContainerInstance/containerGroups"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
+    }
+  }
+}
+
+resource "azurerm_subnet" "virtual_nodes" {
+  name                 = "subnet-virtual-nodes"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = ["10.0.3.0/24"]
+  
+  delegation {
+    name = "aci-delegation"
+    service_delegation {
+      name    = "Microsoft.ContainerInstance/containerGroups"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
+    }
+  }
+}
+
+# ── 3) Private AKS Cluster with Virtual Nodes ───────────────────────────────
 resource "azurerm_kubernetes_cluster" "main" {
   name                = "aks-mlops-dev"
   location           = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   dns_prefix         = "aks-mlops-dev"
   
-  # Private cluster - no public API server access
+  # Private cluster - accessible via self-hosted runner in same VNet
   private_cluster_enabled = true
   
-  # Use default networking (much simpler than custom VNet)
+  # Enable RBAC and Azure AD integration for proper security
+  role_based_access_control_enabled = true
+  local_account_disabled = true  # Requires Azure AD integration (enabled below)
+  
+  # Enable Azure AD integration for modern authentication
+  azure_active_directory_role_based_access_control {
+    managed                = true
+    azure_rbac_enabled     = true
+  }
+  
+  # Use custom VNet for private networking
   network_profile {
-    network_plugin = "azure"
-    network_policy = "azure"
+    network_plugin     = "azure"
+    network_policy     = "azure"
+    service_cidr       = "10.1.0.0/16"
+    dns_service_ip     = "10.1.0.10"
   }
 
   default_node_pool {
-    name                = "default"
-    vm_size             = var.node_size
-    node_count          = var.node_count
+    name                = "system"
+    vm_size             = "Standard_B2s"
+    node_count          = 1  # Minimal for system pods only
+    vnet_subnet_id      = azurerm_subnet.aks.id
     
-    # Disable auto-scaling to control costs
+    # System node pool for essential services
+    only_critical_addons_enabled = true
     enable_auto_scaling = false
+    
+    node_labels = {
+      "node-type" = "system"
+    }
   }
 
   identity {
@@ -62,6 +131,16 @@ resource "azurerm_kubernetes_cluster" "main" {
   workload_identity_enabled = true
   oidc_issuer_enabled      = true
 
+  # Enable Virtual Nodes (ACI Connector)
+  # Note: This requires the virtual nodes subnet with proper delegation
+  # Uncomment to enable virtual nodes for serverless scaling
+  # addon_profile {
+  #   aci_connector_linux {
+  #     enabled     = true
+  #     subnet_name = azurerm_subnet.virtual_nodes.name
+  #   }
+  # }
+
   tags = {
     Environment = "dev"
     Project     = "mlops"
@@ -69,7 +148,17 @@ resource "azurerm_kubernetes_cluster" "main" {
   }
 }
 
-# ── 3) Azure OpenAI Service ──────────────────────────────────────────────────
+# ── Azure AD RBAC Configuration ──────────────────────────────────────────────
+# Grant the current client (service principal) cluster admin role
+data "azurerm_client_config" "current" {}
+
+resource "azurerm_role_assignment" "cluster_admin" {
+  scope                = azurerm_kubernetes_cluster.main.id
+  role_definition_name = "Azure Kubernetes Service Cluster Admin Role"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+# ── 4) Azure OpenAI Service ──────────────────────────────────────────────────
 module "llm_endpoint" {
   count = var.enable_llm ? 1 : 0
   
@@ -86,7 +175,7 @@ module "llm_endpoint" {
   }
 }
 
-# ── 4) Azure Front Door (configured via variables) ───────────────────────────
+# ── 5) Azure Front Door (configured via variables) ───────────────────────────
 module "frontdoor" {
   count = var.enable_frontdoor ? 1 : 0
   
@@ -97,6 +186,10 @@ module "frontdoor" {
   environment        = var.environment
   origin_hostname    = var.frontdoor_origin_hostname
 }
+
+# ── 6) GitHub Self-Hosted Runner (deployed via GitHub Actions) ───────────────
+# Note: The runner is deployed directly from GitHub Actions workflow
+# using the built-in GITHUB_TOKEN and repository context for security
 
 # ── Kubernetes & Helm Providers ─────────────────────────────────────────────
 provider "kubernetes" {
@@ -122,11 +215,6 @@ output "cluster_name" {
 
 output "resource_group_name" {
   value = azurerm_resource_group.main.name
-}
-
-output "kubeconfig" {
-  value     = azurerm_kubernetes_cluster.main.kube_config_raw
-  sensitive = true
 }
 
 # Azure OpenAI outputs (when enabled)
@@ -155,4 +243,10 @@ output "frontdoor_endpoint_hostname" {
 output "frontdoor_endpoint_url" {
   description = "Azure Front Door endpoint URL"
   value       = var.enable_frontdoor ? module.frontdoor[0].frontdoor_endpoint_url : null
+}
+
+# Network outputs for GitHub runner deployment
+output "runner_subnet_id" {
+  description = "Subnet ID for GitHub runner deployment"
+  value       = azurerm_subnet.runners.id
 }

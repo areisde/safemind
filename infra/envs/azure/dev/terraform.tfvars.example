@@ -18,6 +18,13 @@ node_size  = "Standard_B2s"
 # ────────────────────────────────────────────────
 enable_llm           = true   # Enable Azure OpenAI deployment
 enable_frontdoor     = false  # Enable Azure Front Door (external access)
+enable_github_runner = true   # Enable self-hosted runner for private cluster
+
+# ────────────────────────────────────────────────
+# GitHub Configuration (for self-hosted runner)
+# ────────────────────────────────────────────────
+github_token    = "ghp_YOUR_GITHUB_TOKEN_HERE"  # GitHub Personal Access Token
+github_repo_url = "https://github.com/areisde/mlops"
 enable_observability = false  # Enable monitoring stack
 
 # ────────────────────────────────────────────────

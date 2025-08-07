@@ -49,6 +49,9 @@ variable "frontdoor_origin_hostname" {
   default     = "agent.reisdematos.ch"
 }
 
+# ────────────────────────────────────────────────
+# Service deployment toggles
+# ────────────────────────────────────────────────
 variable "enable_observability" {
   type    = bool
   default = false

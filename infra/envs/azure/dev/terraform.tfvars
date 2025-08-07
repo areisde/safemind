@@ -22,3 +22,11 @@ enable_gateway       = true   # Enable Kong gateway
 # Front Door Configuration (if enabled)
 # ────────────────────────────────────────────────
 frontdoor_origin_hostname = "agent.reisdematos.ch"
+
+# ────────────────────────────────────────────────
+# GitHub Runner
+# ────────────────────────────────────────────────
+# Note: Self-hosted runner is deployed automatically by GitHub Actions
+# using built-in GITHUB_TOKEN and repository context - no manual config needed!
+
+
