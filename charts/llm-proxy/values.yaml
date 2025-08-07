@@ -122,3 +122,12 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+# Environment variables for the application
+env:
+  # Azure OpenAI Configuration
+  # These will be set by Helm during deployment
+  AZURE_OPENAI_ENDPOINT: ""
+  AZURE_OPENAI_API_KEY: ""
+  AZURE_OPENAI_DEPLOYMENT_NAME: ""
+  AZURE_OPENAI_API_VERSION: "2024-08-01-preview"

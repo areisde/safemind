@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       kubeconfig: ${{ steps.get-kubeconfig.outputs.kubeconfig }}
+      azure_openai_endpoint: ${{ steps.terraform-outputs.outputs.azure_openai_endpoint }}
+      azure_openai_api_key: ${{ steps.terraform-outputs.outputs.azure_openai_api_key }}
+      gpt4o_deployment_name: ${{ steps.terraform-outputs.outputs.gpt4o_deployment_name }}
     steps:
       - uses: actions/checkout@v4
       
@@ -63,6 +66,14 @@ jobs:
         run: |
           az aks get-credentials --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --name ${{ env.AKS_CLUSTER_NAME }} --file kubeconfig
           echo "kubeconfig=$(cat kubeconfig | base64 -w 0)" >> $GITHUB_OUTPUT
+
+      - name: Get Terraform outputs
+        id: terraform-outputs
+        working-directory: infra/envs/azure/dev
+        run: |
+          echo "azure_openai_endpoint=$(terraform output -raw azure_openai_endpoint)" >> $GITHUB_OUTPUT
+          echo "azure_openai_api_key=$(terraform output -raw azure_openai_api_key)" >> $GITHUB_OUTPUT
+          echo "gpt4o_deployment_name=$(terraform output -raw gpt4o_deployment_name)" >> $GITHUB_OUTPUT
 
   build:
     runs-on: ubuntu-latest
@@ -192,6 +203,10 @@ jobs:
                --namespace llm \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/llm-proxy \
                --set image.tag=${{ github.sha }} \
+               --set env.AZURE_OPENAI_ENDPOINT="${{ needs.infrastructure.outputs.azure_openai_endpoint }}" \
+               --set env.AZURE_OPENAI_API_KEY="${{ needs.infrastructure.outputs.azure_openai_api_key }}" \
+               --set env.AZURE_OPENAI_DEPLOYMENT_NAME="${{ needs.infrastructure.outputs.gpt4o_deployment_name }}" \
+               --set env.AZURE_OPENAI_API_VERSION="2024-08-01-preview" \
                --kubeconfig kubeconfig
 
       - name: Deploy Gateway and Security
