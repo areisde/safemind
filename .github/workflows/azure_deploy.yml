@@ -117,8 +117,16 @@ jobs:
             --name ${{ env.AKS_CLUSTER_NAME }} \
             --overwrite-existing
           
-          # Convert kubeconfig to use service principal authentication
-          kubelogin convert-kubeconfig -l spn
+          # Extract credentials for kubelogin
+          CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')
+          CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')
+          TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')
+          
+          # Convert kubeconfig to use service principal authentication with explicit credentials
+          kubelogin convert-kubeconfig -l spn \
+            --client-id $CLIENT_ID \
+            --client-secret $CLIENT_SECRET \
+            --tenant-id $TENANT_ID
           
           # Test cluster access
           kubectl auth can-i get nodes || echo "Service principal authenticated successfully"
@@ -135,40 +143,20 @@ jobs:
 
       - name: Cleanup Existing Deployments
         run: |
-          echo "🧹 Quick cleanup of potential conflicts..."
+          echo "🧹 Simple cleanup of potential conflicts..."
           
-          # Quick check if namespaces exist
-          LLM_EXISTS=$(kubectl get namespace llm --ignore-not-found=true -o name)
-          OBS_EXISTS=$(kubectl get namespace observability --ignore-not-found=true -o name)
+          # Simple cleanup - just delete namespaces if they exist (everything gets recreated)
+          echo "Deleting llm namespace if it exists..."
+          kubectl delete namespace llm --ignore-not-found=true --timeout=120s || echo "LLM namespace cleanup completed"
           
-          if [[ -n "$LLM_EXISTS" ]]; then
-            echo "📦 LLM namespace exists, cleaning up deployments for fresh install..."
-            # Only clean up deployments and pods, keep other resources
-            kubectl delete deployments --all -n llm --ignore-not-found=true --timeout=60s || echo "LLM deployments cleared"
-            kubectl delete pods --all -n llm --ignore-not-found=true --force --grace-period=0 || echo "LLM pods force-deleted"
-            
-            # Clean up potential service account conflicts
-            kubectl delete serviceaccount guardrail -n llm --ignore-not-found=true || echo "Guardrail SA cleaned"
-            kubectl delete serviceaccount llm-proxy -n llm --ignore-not-found=true || echo "LLM Proxy SA cleaned"
-          else
-            echo "✅ No LLM namespace found, starting fresh"
-          fi
+          echo "Deleting observability namespace if it exists..."
+          kubectl delete namespace observability --ignore-not-found=true --timeout=120s || echo "Observability namespace cleanup completed"
           
-          if [[ -n "$OBS_EXISTS" ]]; then
-            echo "📦 Observability namespace exists, cleaning up deployments for fresh install..."
-            # Only clean up deployments and pods, keep PVCs and other resources
-            kubectl delete deployments,statefulsets --all -n observability --ignore-not-found=true --timeout=60s || echo "Observability workloads cleared"
-            kubectl delete pods --all -n observability --ignore-not-found=true --force --grace-period=0 || echo "Observability pods force-deleted"
-          else
-            echo "✅ No Observability namespace found, starting fresh"
-          fi
+          # Wait a moment for cleanup to complete
+          echo "⏳ Waiting for cleanup to complete (30s)..."
+          sleep 30
           
-          # Quick wait for pod cleanup
-          echo "⏳ Waiting for pod cleanup (15s)..."
-          sleep 15
-          
-          echo "📊 Current cluster state after quick cleanup:"
-          kubectl get pods --all-namespaces | grep -E "(llm|observability)" || echo "✅ Target namespaces clean"
+          echo "✅ Cleanup completed successfully"
 
       - name: Deploy Kong Gateway
         run: |
