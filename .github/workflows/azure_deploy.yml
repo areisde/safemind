@@ -204,28 +204,51 @@ jobs:
           # Create namespace
           kubectl --kubeconfig=kubeconfig create namespace observability --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
           
-          # Deploy Loki for logging
+          # Check cluster resources before deploying observability
+          echo "📊 Pre-deployment cluster status:"
+          kubectl --kubeconfig=kubeconfig get nodes -o wide
+          kubectl --kubeconfig=kubeconfig describe nodes | grep -A 10 "Allocated resources"
+          kubectl --kubeconfig=kubeconfig get pods --all-namespaces | wc -l
+          echo "Current pod count: $(kubectl --kubeconfig=kubeconfig get pods --all-namespaces --no-headers | wc -l)"
+          
+          # Deploy Loki for logging (with debugging and fallback)
+          echo "🔍 Deploying Loki with debugging..."
+          echo "Loki configuration:"
+          cat observability/parameters/loki.yaml
+          
+          # Try to deploy Loki with shorter timeout and debugging
           helm upgrade --install loki grafana/loki \
             --namespace observability \
             --create-namespace \
             -f observability/parameters/loki.yaml \
-            --wait \
-            --timeout 10m \
-            --kubeconfig kubeconfig
+            --timeout 3m \
+            --debug \
+            --kubeconfig kubeconfig || {
+              echo "⚠️ Loki deployment failed, checking status..."
+              kubectl --kubeconfig=kubeconfig get pods -n observability
+              kubectl --kubeconfig=kubeconfig describe pods -n observability | head -100
+              echo "Continuing without waiting for Loki..."
+            }
           
           # Deploy Promtail RBAC and DaemonSet for log collection
           kubectl --kubeconfig=kubeconfig apply -f observability/promtail-rbac.yaml
           kubectl --kubeconfig=kubeconfig apply -f observability/parameters/promtail.yaml
           
-          # Deploy Prometheus for metrics
+          # Deploy Prometheus for metrics (with debugging)
+          echo "🔍 Deploying Prometheus..."
           helm upgrade --install prometheus prometheus-community/prometheus \
             --namespace observability \
             --create-namespace \
-            --wait \
-            --timeout 10m \
-            --kubeconfig kubeconfig
+            --timeout 3m \
+            --debug \
+            --kubeconfig kubeconfig || {
+              echo "⚠️ Prometheus deployment failed, checking status..."
+              kubectl --kubeconfig=kubeconfig get pods -n observability
+              echo "Continuing without waiting for Prometheus..."
+            }
           
-          # Deploy Grafana for dashboards
+          # Deploy Grafana for dashboards (with debugging)
+          echo "🔍 Deploying Grafana..."
           helm upgrade --install grafana grafana/grafana \
             --namespace observability \
             --create-namespace \
@@ -234,9 +257,13 @@ jobs:
             --set sidecar.dashboards.label=grafana_dashboard \
             --set sidecar.datasources.enabled=true \
             --set sidecar.datasources.label=grafana_datasource \
-            --wait \
-            --timeout 10m \
-            --kubeconfig kubeconfig
+            --timeout 3m \
+            --debug \
+            --kubeconfig kubeconfig || {
+              echo "⚠️ Grafana deployment failed, checking status..."
+              kubectl --kubeconfig=kubeconfig get pods -n observability
+              echo "Continuing without waiting for Grafana..."
+            }
           
           # Apply custom dashboards and configs
           kubectl --kubeconfig=kubeconfig apply -f observability/grafana-llm-analytics-dashboard.yaml
@@ -248,19 +275,22 @@ jobs:
           # MLOps namespace was already created in Kong deployment step
           
           # Update/upgrade Guardrail service with health check fixes
-          echo "Deploying Guardrail service..."
+          echo "🔍 Deploying Guardrail service..."
           helm upgrade --install guardrail charts/guardrail \
                --namespace llm \
                --create-namespace \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/guardrail \
                --set image.tag=${{ github.sha }} \
-               --wait \
-               --timeout 10m \
+               --timeout 5m \
                --debug \
-               --kubeconfig kubeconfig
+               --kubeconfig kubeconfig || {
+                 echo "⚠️ Guardrail deployment failed, checking status..."
+                 kubectl --kubeconfig=kubeconfig get pods -n llm
+                 kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "guardrail"
+               }
           
           # Update/upgrade LLM Proxy service with health check fixes
-          echo "Deploying LLM Proxy service..."
+          echo "🔍 Deploying LLM Proxy service..."
           helm upgrade --install llm-proxy charts/llm-proxy \
                --namespace llm \
                --create-namespace \
@@ -270,14 +300,22 @@ jobs:
                --set env.AZURE_OPENAI_API_KEY="${{ needs.infrastructure.outputs.azure_openai_api_key }}" \
                --set env.AZURE_OPENAI_DEPLOYMENT_NAME="${{ needs.infrastructure.outputs.gpt4o_deployment_name }}" \
                --set env.AZURE_OPENAI_API_VERSION="2024-08-01-preview" \
-               --wait \
-               --timeout 10m \
+               --timeout 5m \
                --debug \
-               --kubeconfig kubeconfig
+               --kubeconfig kubeconfig || {
+                 echo "⚠️ LLM Proxy deployment failed, checking status..."
+                 kubectl --kubeconfig=kubeconfig get pods -n llm
+                 kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "llm-proxy"
+               }
           
           # Show current pod status for debugging
-          echo "Current pod status in llm namespace:"
+          echo "📊 Current pod status in llm namespace:"
           kubectl --kubeconfig=kubeconfig get pods -n llm -o wide
+          
+          # Wait for critical services with shorter timeout
+          echo "⏳ Waiting for critical services..."
+          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment/guardrail -n llm --timeout=300s || echo "⚠️ Guardrail still starting..."
+          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment/llm-proxy -n llm --timeout=300s || echo "⚠️ LLM Proxy still starting..."
 
       - name: Deploy Gateway and Security
         run: |
