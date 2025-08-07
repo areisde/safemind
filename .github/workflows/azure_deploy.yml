@@ -207,6 +207,8 @@ jobs:
                --set env.AZURE_OPENAI_API_KEY="${{ needs.infrastructure.outputs.azure_openai_api_key }}" \
                --set env.AZURE_OPENAI_DEPLOYMENT_NAME="${{ needs.infrastructure.outputs.gpt4o_deployment_name }}" \
                --set env.AZURE_OPENAI_API_VERSION="2024-08-01-preview" \
+               --wait \
+               --timeout=300s \
                --kubeconfig kubeconfig
 
       - name: Deploy Gateway and Security
