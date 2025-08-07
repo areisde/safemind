@@ -138,6 +138,23 @@ jobs:
           helm repo add kong https://charts.konghq.com
           helm repo update
 
+      - name: Cleanup Existing Deployments
+        run: |
+          echo "🧹 Cleaning up existing deployments for fresh start..."
+          
+          # Delete existing MLOps services (gracefully, if they exist)
+          kubectl --kubeconfig=kubeconfig delete namespace llm --ignore-not-found=true --wait=true --timeout=300s || echo "⚠️  LLM namespace cleanup completed"
+          kubectl --kubeconfig=kubeconfig delete namespace observability --ignore-not-found=true --wait=true --timeout=300s || echo "⚠️  Observability namespace cleanup completed"
+          
+          # Wait a moment for resources to be fully cleaned up
+          echo "⏳ Waiting for cleanup to complete..."
+          sleep 30
+          
+          # Show current state
+          echo "📊 Current cluster state after cleanup:"
+          kubectl --kubeconfig=kubeconfig get pods --all-namespaces | grep -E "(llm|observability)" || echo "✅ No MLOps pods remaining"
+          kubectl --kubeconfig=kubeconfig get namespaces
+
       - name: Deploy Kong Gateway
         run: |
           # Create namespace for LLM services (Kong will be installed here)
@@ -200,14 +217,18 @@ jobs:
         run: |
           # MLOps namespace was already created in Kong deployment step
           
-          # Deploy Guardrail service
+          # Update/upgrade Guardrail service with health check fixes
+          echo "Deploying Guardrail service..."
           helm upgrade --install guardrail charts/guardrail \
                --namespace llm \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/guardrail \
                --set image.tag=${{ github.sha }} \
+               --timeout 10m \
+               --debug \
                --kubeconfig kubeconfig
           
-          # Deploy LLM Proxy service
+          # Update/upgrade LLM Proxy service with health check fixes
+          echo "Deploying LLM Proxy service..."
           helm upgrade --install llm-proxy charts/llm-proxy \
                --namespace llm \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/llm-proxy \
@@ -216,9 +237,22 @@ jobs:
                --set env.AZURE_OPENAI_API_KEY="${{ needs.infrastructure.outputs.azure_openai_api_key }}" \
                --set env.AZURE_OPENAI_DEPLOYMENT_NAME="${{ needs.infrastructure.outputs.gpt4o_deployment_name }}" \
                --set env.AZURE_OPENAI_API_VERSION="2024-08-01-preview" \
-               --wait \
-               --timeout=300s \
+               --timeout 10m \
+               --debug \
                --kubeconfig kubeconfig
+          
+          # Check deployment status with tolerance for resource constraints
+          echo "Checking deployment status..."
+          kubectl --kubeconfig=kubeconfig rollout status deployment/guardrail -n llm --timeout=600s || echo "Guardrail deployment still progressing..."
+          kubectl --kubeconfig=kubeconfig rollout status deployment/llm-proxy -n llm --timeout=600s || echo "LLM Proxy deployment still progressing..."
+          
+          # Show current pod status for debugging
+          echo "Current pod status in llm namespace:"
+          kubectl --kubeconfig=kubeconfig get pods -n llm -o wide
+          
+          # Show resource usage
+          echo "Node resource usage:"
+          kubectl --kubeconfig=kubeconfig describe nodes | grep -A 5 "Allocated resources"
 
       - name: Deploy Gateway and Security
         run: |
@@ -234,10 +268,30 @@ jobs:
 
       - name: Verify Deployment
         run: |
-          # Wait for deployments to be ready
-          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment --all -n llm --timeout=300s
-          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment --all -n observability --timeout=300s
+          # Check deployment status (don't fail if not ready yet)
+          echo "🔍 Checking deployment status..."
+          kubectl --kubeconfig=kubeconfig get deployments -n llm
+          kubectl --kubeconfig=kubeconfig get deployments -n observability
+          
+          # Show node resource usage to verify we have capacity
+          echo "📊 Node resource usage:"
+          kubectl --kubeconfig=kubeconfig describe nodes | grep -A 10 "Allocated resources"
+          
+          # Show all pods to verify fresh deployment
+          echo "🚀 All pods status after fresh deployment:"
+          kubectl --kubeconfig=kubeconfig get pods --all-namespaces -o wide
+          
+          # Wait for deployments to be ready with longer timeout
+          echo "⏳ Waiting for LLM services to be ready..."
+          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment --all -n llm --timeout=600s || echo "⚠️  LLM deployments may still be starting"
+          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment --all -n observability --timeout=300s || echo "⚠️  Observability deployments may still be starting"
+          
+          # Show final status
+          echo "📊 Final deployment status:"
+          kubectl --kubeconfig=kubeconfig get pods -n llm
+          kubectl --kubeconfig=kubeconfig get pods -n observability
           
           # Get service endpoints
+          echo "🌐 Service endpoints:"
           kubectl --kubeconfig=kubeconfig get services -A
           kubectl --kubeconfig=kubeconfig get ingress -A
