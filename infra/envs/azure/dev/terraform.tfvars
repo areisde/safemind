@@ -5,10 +5,10 @@ location    = "switzerlandnorth"
 environment = "dev"
 
 # ────────────────────────────────────────────────
-# AKS Configuration
+# AKS Configuration (Cost Optimized)
 # ────────────────────────────────────────────────
-node_count = 2
-node_size  = "Standard_B2s"
+node_count = 1              # Start with 1 node
+node_size  = "Standard_B2s"  # Good balance of performance vs cost
 
 # ────────────────────────────────────────────────
 # Feature Toggles

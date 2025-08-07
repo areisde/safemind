@@ -50,10 +50,10 @@ resource "azurerm_kubernetes_cluster" "main" {
     node_count          = var.node_count
     vm_size             = var.node_size
     
-    # Enable auto-scaling
+    # Aggressive auto-scaling for cost optimization
     enable_auto_scaling = true
-    min_count          = 1
-    max_count          = 5
+    min_count          = null 
+    max_count          = null    
   }
 
   identity {
