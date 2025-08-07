@@ -15,6 +15,12 @@ terraform {
 
 provider "azurerm" {
   features {}
+  
+  # Use Service Principal authentication when running in CI/CD
+  # These environment variables are automatically set by azure/login action
+  use_cli                = false
+  use_msi                = false
+  skip_provider_registration = false
 }
 
 # ── 1) VNet (flat) ────────────────────────────────────────────────────────────
