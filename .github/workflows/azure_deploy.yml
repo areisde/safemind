@@ -60,33 +60,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         working-directory: infra/envs/azure/dev
         run: |
-          # Apply infrastructure without GitHub runner
+          # Apply infrastructure changes
           terraform apply -auto-approve -var="enable_github_runner=false"
-
-      - name: Deploy Self-Hosted Runner
-        if: github.ref == 'refs/heads/main'
-        run: |
-          # Get resource group and subnet info from terraform output
-          RESOURCE_GROUP="${{ env.AZURE_RESOURCE_GROUP }}"
-          SUBNET_ID=$(terraform -chdir=infra/envs/azure/dev output -raw runner_subnet_id)
-          
-          # Deploy ACI runner with GitHub context
-          az container create \
-            --resource-group $RESOURCE_GROUP \
-            --name "github-runner-dev" \
-            --image "myoung34/github-runner:latest" \
-            --cpu 1 \
-            --memory 2 \
-            --subnet $SUBNET_ID \
-            --environment-variables \
-              RUNNER_NAME_PREFIX="aci-runner-dev" \
-              REPO_URL="${{ github.server_url }}/${{ github.repository }}" \
-              RUNNER_SCOPE="repo" \
-              LABELS="self-hosted,azure,aci,private-cluster" \
-              EPHEMERAL="true" \
-            --secure-environment-variables \
-              ACCESS_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
-            --restart-policy Never
 
       - name: Get AKS credentials
         id: get-kubeconfig
@@ -127,7 +102,7 @@ jobs:
   deploy:
     needs: [infrastructure, build]
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, azure, aci, private-cluster]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -152,6 +127,11 @@ jobs:
 
       - name: Setup kubectl for Private Cluster with Azure AD
         run: |
+          # Install kubelogin for Azure AD authentication
+          curl -L https://github.com/Azure/kubelogin/releases/latest/download/kubelogin-linux-amd64.zip -o kubelogin.zip
+          unzip kubelogin.zip
+          sudo mv bin/linux_amd64/kubelogin /usr/local/bin/
+          
           # Get credentials for private AKS cluster with Azure AD integration
           az aks get-credentials \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
@@ -160,9 +140,15 @@ jobs:
             --file kubeconfig
           chmod 600 kubeconfig
           
-          # Verify Azure AD authentication
+          # Convert kubeconfig to use service principal authentication
           export KUBECONFIG=kubeconfig
-          kubectl auth can-i get nodes --as system:serviceaccount:default:default || echo "Azure AD auth configured"
+          kubelogin convert-kubeconfig -l spn \
+            --client-id ${{ env.ARM_CLIENT_ID }} \
+            --client-secret ${{ env.ARM_CLIENT_SECRET }} \
+            --tenant-id ${{ env.ARM_TENANT_ID }}
+          
+          # Test cluster access
+          kubectl auth can-i get nodes || echo "Azure AD auth configured for service principal"
 
       - name: Setup Helm
         uses: azure/setup-helm@v3

@@ -147,14 +147,11 @@ resource "azurerm_kubernetes_cluster" "main" {
 }
 
 # ── Azure AD RBAC Configuration ──────────────────────────────────────────────
-# Grant the current client (service principal) cluster admin role
-data "azurerm_client_config" "current" {}
+# Note: Role assignments are managed manually or via separate automation
+# Grant the current client (service principal) cluster admin role if needed:
+# az role assignment create --role "Azure Kubernetes Service Cluster Admin Role" --assignee <object-id> --scope <cluster-resource-id>
 
-resource "azurerm_role_assignment" "cluster_admin" {
-  scope                = azurerm_kubernetes_cluster.main.id
-  role_definition_name = "Azure Kubernetes Service Cluster Admin Role"
-  principal_id         = data.azurerm_client_config.current.object_id
-}
+data "azurerm_client_config" "current" {}
 
 # ── 4) Azure OpenAI Service ──────────────────────────────────────────────────
 module "llm_endpoint" {
