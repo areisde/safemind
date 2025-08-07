@@ -124,7 +124,22 @@ jobs:
         run: |
           helm repo add grafana https://grafana.github.io/helm-charts
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add kong https://charts.konghq.com
           helm repo update
+
+      - name: Deploy Kong Gateway
+        run: |
+          # Create namespace for LLM services (Kong will be installed here)
+          kubectl --kubeconfig=kubeconfig create namespace llm --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
+          
+          # Install Kong as ingress controller
+          helm upgrade --install kong kong/kong \
+            --namespace llm \
+            --set ingressController.enabled=true \
+            --set admin.enabled=true \
+            --set admin.http.enabled=true \
+            --set proxy.type=LoadBalancer \
+            --kubeconfig kubeconfig
 
       - name: Deploy Observability Stack
         run: |
@@ -160,13 +175,10 @@ jobs:
           kubectl --kubeconfig=kubeconfig apply -f observability/grafana-llm-analytics-dashboard.yaml
           kubectl --kubeconfig=kubeconfig apply -f observability/grafana-mlops-dashboard.yaml
           kubectl --kubeconfig=kubeconfig apply -f observability/loki-datasource.yaml
-          kubectl --kubeconfig=kubeconfig apply -f observability/kong-metrics.yaml
-          kubectl --kubeconfig=kubeconfig apply -f observability/kong-servicemonitor.yaml
 
       - name: Deploy MLOps Services
         run: |
-          # Create namespace for MLOps services
-          kubectl --kubeconfig=kubeconfig create namespace llm --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
+          # MLOps namespace was already created in Kong deployment step
           
           # Deploy Guardrail service
           helm upgrade --install guardrail charts/guardrail \
@@ -184,8 +196,12 @@ jobs:
 
       - name: Deploy Gateway and Security
         run: |
-          # Apply Kong gateway configuration
+          # Apply Kong gateway configuration (ingress)
           kubectl --kubeconfig=kubeconfig apply -f charts/gateway/ -R
+          
+          # Apply Kong observability configurations (now that Kong CRDs are available)
+          kubectl --kubeconfig=kubeconfig apply -f observability/kong-metrics.yaml
+          kubectl --kubeconfig=kubeconfig apply -f observability/kong-servicemonitor.yaml
           
           # Apply security policies
           kubectl --kubeconfig=kubeconfig apply -f security/ -R
