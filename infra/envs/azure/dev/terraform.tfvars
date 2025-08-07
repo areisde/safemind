@@ -8,8 +8,8 @@ suffix = "areisde"
 k8s_version = "1.33.2"
 node_size = "Standard_B2s"
 enable_auto_scaling = true
-min_nodes = 1
-max_nodes = 5
+min_nodes = null
+max_nodes = null
 
 # Feature toggles - enable the services you want to deploy
 enable_observability = true
