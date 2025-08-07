@@ -10,6 +10,14 @@ singleBinary:
   replicas: 1
   persistence:
     enabled: false
+  # Resource limits for small environments
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
     
 # Loki configuration
 loki:
@@ -29,9 +37,15 @@ loki:
           period: 24h
   limits_config:
     retention_period: 744h  # 31 days
-    enforce_metric_name: false
     reject_old_samples: true
     reject_old_samples_max_age: 168h
+
+# Disable memory-intensive components
+chunksCache:
+  enabled: false
+  
+resultsCache:
+  enabled: false
 
 # Disable distributed components (they should be 0 for SingleBinary mode)
 read:
@@ -63,3 +77,10 @@ minio:
 gateway:
   enabled: true
   replicas: 1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
