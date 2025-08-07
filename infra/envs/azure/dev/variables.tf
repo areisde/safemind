@@ -49,6 +49,12 @@ variable "frontdoor_origin_hostname" {
   default     = "agent.reisdematos.ch"
 }
 
+variable "enable_github_runner" {
+  description = "Enable GitHub self-hosted runner deployment"
+  type        = bool
+  default     = false  # Start disabled, deploy via GitHub Actions when needed
+}
+
 # ────────────────────────────────────────────────
 # Service deployment toggles
 # ────────────────────────────────────────────────
