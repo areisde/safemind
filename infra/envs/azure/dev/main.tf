@@ -109,18 +109,16 @@ resource "azurerm_kubernetes_cluster" "main" {
   }
 
   default_node_pool {
-    name                = "system"
+    name                = "default"
     vm_size             = "Standard_B2s"
     node_count          = 1  # Minimal for system pods only
     vnet_subnet_id      = azurerm_subnet.aks.id
     
     # System node pool for essential services
-    only_critical_addons_enabled = true
+    only_critical_addons_enabled = false
     enable_auto_scaling = false
     
-    node_labels = {
-      "node-type" = "system"
-    }
+    node_labels = {}
   }
 
   identity {
