@@ -5,7 +5,7 @@ location = "switzerlandnorth"
 suffix = "areisde"
 
 # Kubernetes cluster configuration
-k8s_version = "1.28"
+k8s_version = "1.33.2"
 node_size = "Standard_B2s"
 enable_auto_scaling = true
 min_nodes = 1
