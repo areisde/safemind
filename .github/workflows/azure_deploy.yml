@@ -63,6 +63,38 @@ jobs:
           # Apply infrastructure changes
           terraform apply -auto-approve -var="enable_github_runner=false"
 
+      - name: Deploy Self-Hosted Runner for Private Cluster
+        if: github.ref == 'refs/heads/main'
+        run: |
+          # Get resource group and subnet info from terraform output
+          RESOURCE_GROUP="${{ env.AZURE_RESOURCE_GROUP }}"
+          SUBNET_ID=$(terraform -chdir=infra/envs/azure/dev output -raw runner_subnet_id)
+          
+          # Remove any existing runner
+          az container delete --resource-group $RESOURCE_GROUP --name "github-runner-dev" --yes || echo "No existing runner to remove"
+          
+          # Deploy ACI runner with GitHub context for private cluster access
+          az container create \
+            --resource-group $RESOURCE_GROUP \
+            --name "github-runner-dev" \
+            --image "myoung34/github-runner:latest" \
+            --cpu 2 \
+            --memory 4 \
+            --subnet $SUBNET_ID \
+            --environment-variables \
+              RUNNER_NAME_PREFIX="aci-runner-dev" \
+              REPO_URL="${{ github.server_url }}/${{ github.repository }}" \
+              RUNNER_SCOPE="repo" \
+              LABELS="self-hosted,azure,aci,private-cluster" \
+              EPHEMERAL="true" \
+            --secure-environment-variables \
+              ACCESS_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            --restart-policy Never
+          
+          # Wait for runner to register
+          echo "Waiting for runner to register with GitHub..."
+          sleep 30
+
       - name: Get AKS credentials
         id: get-kubeconfig
         run: |
@@ -102,7 +134,7 @@ jobs:
   deploy:
     needs: [infrastructure, build]
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, azure, aci, private-cluster]
     steps:
       - uses: actions/checkout@v4
 
@@ -143,9 +175,9 @@ jobs:
           # Convert kubeconfig to use service principal authentication
           export KUBECONFIG=kubeconfig
           kubelogin convert-kubeconfig -l spn \
-            --client-id ${{ env.ARM_CLIENT_ID }} \
-            --client-secret ${{ env.ARM_CLIENT_SECRET }} \
-            --tenant-id ${{ env.ARM_TENANT_ID }}
+            --client-id $CLIENT_ID \
+            --client-secret $CLIENT_SECRET \
+            --tenant-id $TENANT_ID
           
           # Test cluster access
           kubectl auth can-i get nodes || echo "Azure AD auth configured for service principal"

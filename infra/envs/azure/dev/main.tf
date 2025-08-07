@@ -87,16 +87,10 @@ resource "azurerm_kubernetes_cluster" "main" {
   resource_group_name = azurerm_resource_group.main.name
   dns_prefix         = "aks-mlops-dev"
   
-  # Private cluster - accessible via self-hosted runner in same VNet or public endpoint
+  # Private cluster - accessible only via self-hosted runner in same VNet
   private_cluster_enabled = true
-  private_cluster_public_fqdn_enabled = true  # Enable public FQDN for GitHub Actions access
   
-  # Allow GitHub Actions IP ranges for API server access
-  api_server_access_profile {
-    authorized_ip_ranges = [
-      "0.0.0.0/0"  # Allow all for now - can be restricted to GitHub Actions IP ranges if needed
-    ]
-  }
+  # Note: No public endpoint for security - GitHub Actions must use self-hosted runner
   
   # Enable RBAC and Azure AD integration for proper security
   role_based_access_control_enabled = true
