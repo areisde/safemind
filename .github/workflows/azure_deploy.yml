@@ -150,6 +150,10 @@ jobs:
           helm upgrade --install grafana grafana/grafana \
             --namespace observability \
             --set adminPassword=${{ secrets.GRAFANA_ADMIN_PASSWORD }} \
+            --set sidecar.dashboards.enabled=true \
+            --set sidecar.dashboards.label=grafana_dashboard \
+            --set sidecar.datasources.enabled=true \
+            --set sidecar.datasources.label=grafana_datasource \
             --kubeconfig kubeconfig
           
           # Apply custom dashboards and configs
