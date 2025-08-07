@@ -93,7 +93,7 @@ resource "azurerm_cdn_frontdoor_rule" "block_bots" {
     }
     
     route_configuration_override_action {
-      cache_duration                = "PT0S"
+      cache_duration                = "0.00:00:00"  # No caching for blocked requests
       cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.aks_backend.id
       forwarding_protocol           = "HttpsOnly"
     }
