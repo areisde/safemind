@@ -78,6 +78,7 @@ jobs:
             --resource-group $RESOURCE_GROUP \
             --name "github-runner-dev" \
             --image "myoung34/github-runner:latest" \
+            --os-type Linux \
             --cpu 2 \
             --memory 4 \
             --subnet $SUBNET_ID \
@@ -87,13 +88,18 @@ jobs:
               RUNNER_SCOPE="repo" \
               LABELS="self-hosted,azure,aci,private-cluster" \
               EPHEMERAL="true" \
+              RUNNER_WORKDIR="/tmp/runner" \
             --secure-environment-variables \
               ACCESS_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
-            --restart-policy Never
+            --restart-policy Never \
+            --dns-name-label "github-runner-dev-${{ github.run_id }}"
           
-          # Wait for runner to register
+          # Wait for runner to register and show status
           echo "Waiting for runner to register with GitHub..."
-          sleep 30
+          sleep 45
+          
+          # Check container status
+          az container show --resource-group $RESOURCE_GROUP --name "github-runner-dev" --query "containers[0].instanceView.currentState" --output table
 
       - name: Get AKS credentials
         id: get-kubeconfig
