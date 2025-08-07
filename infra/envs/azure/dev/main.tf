@@ -47,13 +47,11 @@ resource "azurerm_kubernetes_cluster" "main" {
 
   default_node_pool {
     name                = "default"
-    node_count          = var.node_count
     vm_size             = var.node_size
+    node_count          = var.node_count
     
-    # Aggressive auto-scaling for cost optimization
-    enable_auto_scaling = true
-    min_count          = null 
-    max_count          = null    
+    # Disable auto-scaling to control costs
+    enable_auto_scaling = false
   }
 
   identity {
