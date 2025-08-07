@@ -50,21 +50,6 @@ resource "azurerm_subnet" "aks" {
   address_prefixes     = ["10.0.1.0/24"]
 }
 
-resource "azurerm_subnet" "runners" {
-  name                 = "subnet-runners"
-  resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.2.0/24"]
-  
-  delegation {
-    name = "aci-delegation"
-    service_delegation {
-      name    = "Microsoft.ContainerInstance/containerGroups"
-      actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
-    }
-  }
-}
-
 resource "azurerm_subnet" "virtual_nodes" {
   name                 = "subnet-virtual-nodes"
   resource_group_name  = azurerm_resource_group.main.name
@@ -80,25 +65,22 @@ resource "azurerm_subnet" "virtual_nodes" {
   }
 }
 
-# ── 3) Private AKS Cluster with Virtual Nodes ───────────────────────────────
+# ── 3) AKS Cluster with Azure AD Integration ─────────────────────────────────
 resource "azurerm_kubernetes_cluster" "main" {
   name                = "aks-mlops-dev"
   location           = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   dns_prefix         = "aks-mlops-dev"
   
-  # Private cluster - accessible only via self-hosted runner in same VNet
-  private_cluster_enabled = true
-  
-  # Note: No public endpoint for security - GitHub Actions must use self-hosted runner
+  # Public API server endpoint with Azure AD authentication (secure)
+  private_cluster_enabled = false
   
   # Enable RBAC and Azure AD integration for proper security
   role_based_access_control_enabled = true
-  local_account_disabled = true  # Requires Azure AD integration (enabled below)
+  local_account_disabled = false  # Allow local accounts for easier management
   
   # Enable Azure AD integration for modern authentication
   azure_active_directory_role_based_access_control {
-    managed                = true
     azure_rbac_enabled     = true
   }
   
@@ -149,11 +131,14 @@ resource "azurerm_kubernetes_cluster" "main" {
 }
 
 # ── Azure AD RBAC Configuration ──────────────────────────────────────────────
-# Note: Role assignments are managed manually or via separate automation
-# Grant the current client (service principal) cluster admin role if needed:
-# az role assignment create --role "Azure Kubernetes Service Cluster Admin Role" --assignee <object-id> --scope <cluster-resource-id>
-
 data "azurerm_client_config" "current" {}
+
+# Grant the GitHub Actions service principal cluster admin role
+resource "azurerm_role_assignment" "github_actions_cluster_admin" {
+  scope                = azurerm_kubernetes_cluster.main.id
+  role_definition_name = "Azure Kubernetes Service Cluster Admin Role"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
 
 # ── 4) Azure OpenAI Service ──────────────────────────────────────────────────
 module "llm_endpoint" {
@@ -242,8 +227,8 @@ output "frontdoor_endpoint_url" {
   value       = var.enable_frontdoor ? module.frontdoor[0].frontdoor_endpoint_url : null
 }
 
-# Network outputs for GitHub runner deployment
-output "runner_subnet_id" {
-  description = "Subnet ID for GitHub runner deployment"
-  value       = azurerm_subnet.runners.id
+# Network outputs for connectivity
+output "virtual_network_id" {
+  description = "Virtual network ID"
+  value       = azurerm_virtual_network.main.id
 }

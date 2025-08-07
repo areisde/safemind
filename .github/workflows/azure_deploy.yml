@@ -16,7 +16,6 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
-      kubeconfig: ${{ steps.get-kubeconfig.outputs.kubeconfig }}
       azure_openai_endpoint: ${{ steps.terraform-outputs.outputs.azure_openai_endpoint }}
       azure_openai_api_key: ${{ steps.terraform-outputs.outputs.azure_openai_api_key }}
       gpt4o_deployment_name: ${{ steps.terraform-outputs.outputs.gpt4o_deployment_name }}
@@ -61,50 +60,7 @@ jobs:
         working-directory: infra/envs/azure/dev
         run: |
           # Apply infrastructure changes
-          terraform apply -auto-approve -var="enable_github_runner=false"
-
-      - name: Deploy Self-Hosted Runner for Private Cluster
-        if: github.ref == 'refs/heads/main'
-        run: |
-          # Get resource group and subnet info from terraform output
-          RESOURCE_GROUP="${{ env.AZURE_RESOURCE_GROUP }}"
-          SUBNET_ID=$(terraform -chdir=infra/envs/azure/dev output -raw runner_subnet_id)
-          
-          # Remove any existing runner
-          az container delete --resource-group $RESOURCE_GROUP --name "github-runner-dev" --yes || echo "No existing runner to remove"
-          
-          # Deploy ACI runner with GitHub context for private cluster access
-          az container create \
-            --resource-group $RESOURCE_GROUP \
-            --name "github-runner-dev" \
-            --image "myoung34/github-runner:latest" \
-            --os-type Linux \
-            --cpu 2 \
-            --memory 4 \
-            --subnet $SUBNET_ID \
-            --environment-variables \
-              RUNNER_NAME_PREFIX="aci-runner-dev" \
-              REPO_URL="${{ github.server_url }}/${{ github.repository }}" \
-              RUNNER_SCOPE="repo" \
-              LABELS="self-hosted,azure,aci,private-cluster" \
-              EPHEMERAL="true" \
-              RUNNER_WORKDIR="/tmp/runner" \
-            --secure-environment-variables \
-              ACCESS_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
-            --restart-policy Never
-          
-          # Wait for runner to register and show status
-          echo "Waiting for runner to register with GitHub..."
-          sleep 45
-          
-          # Check container status
-          az container show --resource-group $RESOURCE_GROUP --name "github-runner-dev" --query "containers[0].instanceView.currentState" --output table
-
-      - name: Get AKS credentials
-        id: get-kubeconfig
-        run: |
-          az aks get-credentials --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --name ${{ env.AKS_CLUSTER_NAME }} --file kubeconfig
-          echo "kubeconfig=$(cat kubeconfig | base64 -w 0)" >> $GITHUB_OUTPUT
+          terraform apply -auto-approve
 
       - name: Get Terraform outputs
         id: terraform-outputs
@@ -139,7 +95,7 @@ jobs:
   deploy:
     needs: [infrastructure, build]
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, azure, aci, private-cluster]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -148,44 +104,24 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Set Azure Environment Variables
-        run: |
-          # Extract values from AZURE_CREDENTIALS secret for deploy job
-          CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')
-          CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')
-          TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')
-          SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')
-          
-          # Set environment variables for Azure CLI and subsequent steps
-          echo "ARM_CLIENT_ID=$CLIENT_ID" >> $GITHUB_ENV
-          echo "ARM_CLIENT_SECRET=$CLIENT_SECRET" >> $GITHUB_ENV
-          echo "ARM_TENANT_ID=$TENANT_ID" >> $GITHUB_ENV
-          echo "ARM_SUBSCRIPTION_ID=$SUBSCRIPTION_ID" >> $GITHUB_ENV
-
-      - name: Setup kubectl for Private Cluster with Azure AD
+      - name: Setup kubectl with Azure AD
         run: |
           # Install kubelogin for Azure AD authentication
           curl -L https://github.com/Azure/kubelogin/releases/latest/download/kubelogin-linux-amd64.zip -o kubelogin.zip
           unzip kubelogin.zip
           sudo mv bin/linux_amd64/kubelogin /usr/local/bin/
           
-          # Get credentials for private AKS cluster with Azure AD integration
+          # Get credentials for AKS cluster with Azure AD integration
           az aks get-credentials \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --name ${{ env.AKS_CLUSTER_NAME }} \
-            --overwrite-existing \
-            --file kubeconfig
-          chmod 600 kubeconfig
+            --overwrite-existing
           
           # Convert kubeconfig to use service principal authentication
-          export KUBECONFIG=kubeconfig
-          kubelogin convert-kubeconfig -l spn \
-            --client-id $CLIENT_ID \
-            --client-secret $CLIENT_SECRET \
-            --tenant-id $TENANT_ID
+          kubelogin convert-kubeconfig -l spn
           
           # Test cluster access
-          kubectl auth can-i get nodes || echo "Azure AD auth configured for service principal"
+          kubectl auth can-i get nodes || echo "Service principal authenticated successfully"
 
       - name: Setup Helm
         uses: azure/setup-helm@v3
@@ -202,18 +138,18 @@ jobs:
           echo "🧹 Quick cleanup of potential conflicts..."
           
           # Quick check if namespaces exist
-          LLM_EXISTS=$(kubectl --kubeconfig=kubeconfig get namespace llm --ignore-not-found=true -o name)
-          OBS_EXISTS=$(kubectl --kubeconfig=kubeconfig get namespace observability --ignore-not-found=true -o name)
+          LLM_EXISTS=$(kubectl get namespace llm --ignore-not-found=true -o name)
+          OBS_EXISTS=$(kubectl get namespace observability --ignore-not-found=true -o name)
           
           if [[ -n "$LLM_EXISTS" ]]; then
             echo "📦 LLM namespace exists, cleaning up deployments for fresh install..."
             # Only clean up deployments and pods, keep other resources
-            kubectl --kubeconfig=kubeconfig delete deployments --all -n llm --ignore-not-found=true --timeout=60s || echo "LLM deployments cleared"
-            kubectl --kubeconfig=kubeconfig delete pods --all -n llm --ignore-not-found=true --force --grace-period=0 || echo "LLM pods force-deleted"
+            kubectl delete deployments --all -n llm --ignore-not-found=true --timeout=60s || echo "LLM deployments cleared"
+            kubectl delete pods --all -n llm --ignore-not-found=true --force --grace-period=0 || echo "LLM pods force-deleted"
             
             # Clean up potential service account conflicts
-            kubectl --kubeconfig=kubeconfig delete serviceaccount guardrail -n llm --ignore-not-found=true || echo "Guardrail SA cleaned"
-            kubectl --kubeconfig=kubeconfig delete serviceaccount llm-proxy -n llm --ignore-not-found=true || echo "LLM Proxy SA cleaned"
+            kubectl delete serviceaccount guardrail -n llm --ignore-not-found=true || echo "Guardrail SA cleaned"
+            kubectl delete serviceaccount llm-proxy -n llm --ignore-not-found=true || echo "LLM Proxy SA cleaned"
           else
             echo "✅ No LLM namespace found, starting fresh"
           fi
@@ -221,8 +157,8 @@ jobs:
           if [[ -n "$OBS_EXISTS" ]]; then
             echo "📦 Observability namespace exists, cleaning up deployments for fresh install..."
             # Only clean up deployments and pods, keep PVCs and other resources
-            kubectl --kubeconfig=kubeconfig delete deployments,statefulsets --all -n observability --ignore-not-found=true --timeout=60s || echo "Observability workloads cleared"
-            kubectl --kubeconfig=kubeconfig delete pods --all -n observability --ignore-not-found=true --force --grace-period=0 || echo "Observability pods force-deleted"
+            kubectl delete deployments,statefulsets --all -n observability --ignore-not-found=true --timeout=60s || echo "Observability workloads cleared"
+            kubectl delete pods --all -n observability --ignore-not-found=true --force --grace-period=0 || echo "Observability pods force-deleted"
           else
             echo "✅ No Observability namespace found, starting fresh"
           fi
@@ -232,21 +168,21 @@ jobs:
           sleep 15
           
           echo "📊 Current cluster state after quick cleanup:"
-          kubectl --kubeconfig=kubeconfig get pods --all-namespaces | grep -E "(llm|observability)" || echo "✅ Target namespaces clean"
+          kubectl get pods --all-namespaces | grep -E "(llm|observability)" || echo "✅ Target namespaces clean"
 
       - name: Deploy Kong Gateway
         run: |
           # Create namespace for LLM services (Kong will be installed here)
-          kubectl --kubeconfig=kubeconfig create namespace llm --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
+          kubectl create namespace llm --dry-run=client -o yaml | kubectl apply -f -
           
           # Create GitHub Container Registry pull secret
-          kubectl --kubeconfig=kubeconfig create secret docker-registry ghcr-pull \
+          kubectl create secret docker-registry ghcr-pull \
             --namespace llm \
             --docker-server=ghcr.io \
             --docker-username=${{ github.actor }} \
             --docker-password=${{ secrets.GITHUB_TOKEN }} \
             --docker-email=${{ github.actor }}@users.noreply.github.com \
-            --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
+            --dry-run=client -o yaml | kubectl apply -f -
           
           # Install Kong as ingress controller with force upgrade
           echo "🔍 Installing Kong Gateway..."
@@ -259,9 +195,9 @@ jobs:
             --wait \
             --timeout 8m \
             --force \
-            --kubeconfig kubeconfig || {
+             || {
               echo "❌ Kong deployment failed"
-              kubectl --kubeconfig=kubeconfig get pods -n llm
+              kubectl get pods -n llm
               exit 1
             }
           
@@ -270,14 +206,14 @@ jobs:
       - name: Deploy Observability Stack
         run: |
           # Create namespace
-          kubectl --kubeconfig=kubeconfig create namespace observability --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
+          kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
           
           # Check cluster resources before deploying observability
           echo "📊 Pre-deployment cluster status:"
-          kubectl --kubeconfig=kubeconfig get nodes -o wide
-          kubectl --kubeconfig=kubeconfig describe nodes | grep -A 10 "Allocated resources"
-          kubectl --kubeconfig=kubeconfig get pods --all-namespaces | wc -l
-          echo "Current pod count: $(kubectl --kubeconfig=kubeconfig get pods --all-namespaces --no-headers | wc -l)"
+          kubectl get nodes -o wide
+          kubectl describe nodes | grep -A 10 "Allocated resources"
+          kubectl get pods --all-namespaces | wc -l
+          echo "Current pod count: $(kubectl get pods --all-namespaces --no-headers | wc -l)"
           
           # Deploy Loki for logging (with debugging and fallback)
           echo "🔍 Deploying Loki with debugging..."
@@ -291,17 +227,17 @@ jobs:
             -f observability/parameters/loki.yaml \
             --timeout 3m \
             --debug \
-            --kubeconfig kubeconfig || {
+             || {
               echo "⚠️ Loki deployment failed, checking status..."
-              kubectl --kubeconfig=kubeconfig get pods -n observability
-              kubectl --kubeconfig=kubeconfig describe pods -n observability | head -100
+              kubectl get pods -n observability
+              kubectl describe pods -n observability | head -100
               echo "Continuing without waiting for Loki..."
             }
           
           # Deploy Promtail RBAC and DaemonSet for log collection
           echo "🔍 Deploying Promtail for log collection..."
-          kubectl --kubeconfig=kubeconfig apply -f observability/promtail-rbac.yaml || echo "⚠️ Promtail RBAC apply failed"
-          kubectl --kubeconfig=kubeconfig apply -f observability/parameters/promtail.yaml || echo "⚠️ Promtail DaemonSet apply failed"
+          kubectl apply -f observability/promtail-rbac.yaml || echo "⚠️ Promtail RBAC apply failed"
+          kubectl apply -f observability/parameters/promtail.yaml || echo "⚠️ Promtail DaemonSet apply failed"
           
           # Deploy Prometheus for metrics (with debugging)
           echo "🔍 Deploying Prometheus..."
@@ -310,9 +246,9 @@ jobs:
             --create-namespace \
             --timeout 3m \
             --debug \
-            --kubeconfig kubeconfig || {
+             || {
               echo "⚠️ Prometheus deployment failed, checking status..."
-              kubectl --kubeconfig=kubeconfig get pods -n observability
+              kubectl get pods -n observability
               echo "Continuing without waiting for Prometheus..."
             }
           
@@ -328,31 +264,31 @@ jobs:
             --set sidecar.datasources.label=grafana_datasource \
             --timeout 3m \
             --debug \
-            --kubeconfig kubeconfig || {
+             || {
               echo "⚠️ Grafana deployment failed, checking status..."
-              kubectl --kubeconfig=kubeconfig get pods -n observability
+              kubectl get pods -n observability
               echo "Continuing without waiting for Grafana..."
             }
           
           # Apply custom dashboards and configs (best effort)
           echo "🔍 Applying custom dashboards and configurations..."
-          kubectl --kubeconfig=kubeconfig apply -f observability/grafana-llm-analytics-dashboard.yaml || echo "⚠️ LLM analytics dashboard apply failed"
-          kubectl --kubeconfig=kubeconfig apply -f observability/grafana-mlops-dashboard.yaml || echo "⚠️ MLOps dashboard apply failed"
-          kubectl --kubeconfig=kubeconfig apply -f observability/loki-datasource.yaml || echo "⚠️ Loki datasource apply failed"
+          kubectl apply -f observability/grafana-llm-analytics-dashboard.yaml || echo "⚠️ LLM analytics dashboard apply failed"
+          kubectl apply -f observability/grafana-mlops-dashboard.yaml || echo "⚠️ MLOps dashboard apply failed"
+          kubectl apply -f observability/loki-datasource.yaml || echo "⚠️ Loki datasource apply failed"
 
       - name: Deploy MLOps Services
         run: |
           # Ensure namespace exists and is clean
-          kubectl --kubeconfig=kubeconfig create namespace llm --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
+          kubectl create namespace llm --dry-run=client -o yaml | kubectl apply -f -
           
           # Recreate GHCR pull secret in case it was cleaned up
-          kubectl --kubeconfig=kubeconfig create secret docker-registry ghcr-pull \
+          kubectl create secret docker-registry ghcr-pull \
             --namespace llm \
             --docker-server=ghcr.io \
             --docker-username=${{ github.actor }} \
             --docker-password=${{ secrets.GITHUB_TOKEN }} \
             --docker-email=${{ github.actor }}@users.noreply.github.com \
-            --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
+            --dry-run=client -o yaml | kubectl apply -f -
           
           # Deploy Guardrail service with conflict handling
           echo "🔍 Deploying Guardrail service..."
@@ -363,10 +299,10 @@ jobs:
                --set image.pullSecrets[0].name=ghcr-pull \
                --timeout 5m \
                --force \
-               --kubeconfig kubeconfig || {
+                || {
             echo "⚠️ Guardrail deployment failed, checking status..."
-            kubectl --kubeconfig=kubeconfig get pods -n llm
-            kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "guardrail" || echo "No guardrail pods found"
+            kubectl get pods -n llm
+            kubectl describe pods -n llm | grep -A 10 "guardrail" || echo "No guardrail pods found"
           }
           
           # Deploy LLM Proxy service with conflict handling
@@ -382,31 +318,31 @@ jobs:
                --set env.AZURE_OPENAI_API_VERSION="2024-08-01-preview" \
                --timeout 5m \
                --force \
-               --kubeconfig kubeconfig || {
+                || {
             echo "⚠️ LLM Proxy deployment failed, checking status..."
-            kubectl --kubeconfig=kubeconfig get pods -n llm
-            kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "llm-proxy" || echo "No llm-proxy pods found"
+            kubectl get pods -n llm
+            kubectl describe pods -n llm | grep -A 10 "llm-proxy" || echo "No llm-proxy pods found"
           }
           
           # Show current pod status for debugging
           echo "📊 Current pod status in llm namespace:"
-          kubectl --kubeconfig=kubeconfig get pods -n llm -o wide
+          kubectl get pods -n llm -o wide
           
           # Wait for critical services with shorter timeout (best effort)
           echo "⏳ Waiting for critical services (best effort)..."
-          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment/guardrail -n llm --timeout=180s || echo "⚠️ Guardrail still starting..."
-          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment/llm-proxy -n llm --timeout=180s || echo "⚠️ LLM Proxy still starting..."
+          kubectl wait --for=condition=available deployment/guardrail -n llm --timeout=180s || echo "⚠️ Guardrail still starting..."
+          kubectl wait --for=condition=available deployment/llm-proxy -n llm --timeout=180s || echo "⚠️ LLM Proxy still starting..."
 
       - name: Deploy Gateway and Security
         run: |
           # Apply Kong gateway configuration (ingress) - best effort
           echo "🔍 Applying Kong gateway configurations..."
-          kubectl --kubeconfig=kubeconfig apply -f charts/gateway/ -R || echo "⚠️ Some gateway configs failed to apply"
+          kubectl apply -f charts/gateway/ -R || echo "⚠️ Some gateway configs failed to apply"
           
           # Apply Kong observability configurations (now that Kong CRDs are available) - best effort
           echo "🔍 Applying Kong observability configurations..."
-          kubectl --kubeconfig=kubeconfig apply -f observability/kong-metrics.yaml || echo "⚠️ Kong metrics config failed"
-          kubectl --kubeconfig=kubeconfig apply -f observability/kong-servicemonitor.yaml || echo "⚠️ Kong service monitor failed"
+          kubectl apply -f observability/kong-metrics.yaml || echo "⚠️ Kong metrics config failed"
+          kubectl apply -f observability/kong-servicemonitor.yaml || echo "⚠️ Kong service monitor failed"
           
           # Apply security policies with detailed feedback
           echo "🔍 Applying security policies..."
@@ -415,7 +351,7 @@ jobs:
           for security_file in security/*.yaml; do
             if [[ -f "$security_file" ]]; then
               echo "📋 Applying $security_file..."
-              if kubectl --kubeconfig=kubeconfig apply -f "$security_file"; then
+              if kubectl apply -f "$security_file"; then
                 echo "✅ Successfully applied $security_file"
               else
                 echo "❌ Failed to apply $security_file"
@@ -425,35 +361,35 @@ jobs:
           
           # Verify security policies are active
           echo "🔒 Verifying security policies are active..."
-          kubectl --kubeconfig=kubeconfig get networkpolicies -A || echo "No network policies found"
-          kubectl --kubeconfig=kubeconfig get kongplugins -A || echo "No Kong plugins found"
+          kubectl get networkpolicies -A || echo "No network policies found"
+          kubectl get kongplugins -A || echo "No Kong plugins found"
 
       - name: Verify Deployment
         run: |
           # Show final deployment status
           echo "🔍 Checking final deployment status..."
-          kubectl --kubeconfig=kubeconfig get deployments -n llm -o wide
-          kubectl --kubeconfig=kubeconfig get deployments -n observability -o wide
+          kubectl get deployments -n llm -o wide
+          kubectl get deployments -n observability -o wide
           
           # Show node resource usage to verify we have capacity
           echo "📊 Node resource usage:"
-          kubectl --kubeconfig=kubeconfig describe nodes | grep -A 10 "Allocated resources"
+          kubectl describe nodes | grep -A 10 "Allocated resources"
           
           # Show all pods status after fresh deployment
           echo "🚀 All pods status after fresh deployment:"
-          kubectl --kubeconfig=kubeconfig get pods --all-namespaces -o wide
+          kubectl get pods --all-namespaces -o wide
           
           # Verify services are healthy
           echo "🏥 Service health checks:"
-          kubectl --kubeconfig=kubeconfig get pods -n llm -l app.kubernetes.io/name=guardrail
-          kubectl --kubeconfig=kubeconfig get pods -n llm -l app.kubernetes.io/name=llm-proxy
-          kubectl --kubeconfig=kubeconfig get pods -n llm -l app.kubernetes.io/name=kong
+          kubectl get pods -n llm -l app.kubernetes.io/name=guardrail
+          kubectl get pods -n llm -l app.kubernetes.io/name=llm-proxy
+          kubectl get pods -n llm -l app.kubernetes.io/name=kong
           
           # Get service endpoints
           echo "🌐 Service endpoints:"
-          kubectl --kubeconfig=kubeconfig get services -A
-          kubectl --kubeconfig=kubeconfig get ingress -A
+          kubectl get services -A
+          kubectl get ingress -A
           
           # Show logs for any failing pods
           echo "📋 Checking for any failing pods..."
-          kubectl --kubeconfig=kubeconfig get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded
+          kubectl get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded
