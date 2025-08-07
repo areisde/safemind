@@ -6,8 +6,8 @@ on:
     branches: [main]
 
 env:
-  AZURE_RESOURCE_GROUP: k8s-dev-aks-rg
-  AKS_CLUSTER_NAME: k8s-dev
+  AZURE_RESOURCE_GROUP: mlops-dev-rg
+  AKS_CLUSTER_NAME: aks-mlops-dev
   IMAGE_GUARDRAIL: ghcr.io/${{ github.repository_owner }}/guardrail:${{ github.sha }}
   IMAGE_PROXY: ghcr.io/${{ github.repository_owner }}/llm-proxy:${{ github.sha }}
 
@@ -349,9 +349,25 @@ jobs:
           kubectl --kubeconfig=kubeconfig apply -f observability/kong-metrics.yaml || echo "⚠️ Kong metrics config failed"
           kubectl --kubeconfig=kubeconfig apply -f observability/kong-servicemonitor.yaml || echo "⚠️ Kong service monitor failed"
           
-          # Apply security policies - best effort
+          # Apply security policies with detailed feedback
           echo "🔍 Applying security policies..."
-          kubectl --kubeconfig=kubeconfig apply -f security/ -R || echo "⚠️ Some security policies failed to apply"
+          
+          # Apply each security file individually for better error tracking
+          for security_file in security/*.yaml; do
+            if [[ -f "$security_file" ]]; then
+              echo "📋 Applying $security_file..."
+              if kubectl --kubeconfig=kubeconfig apply -f "$security_file"; then
+                echo "✅ Successfully applied $security_file"
+              else
+                echo "❌ Failed to apply $security_file"
+              fi
+            fi
+          done
+          
+          # Verify security policies are active
+          echo "🔒 Verifying security policies are active..."
+          kubectl --kubeconfig=kubeconfig get networkpolicies -A || echo "No network policies found"
+          kubectl --kubeconfig=kubeconfig get kongplugins -A || echo "No Kong plugins found"
 
       - name: Verify Deployment
         run: |

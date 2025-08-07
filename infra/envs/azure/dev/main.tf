@@ -143,6 +143,11 @@ output "azure_openai_api_key" {
   sensitive   = true
 }
 
+output "gpt4o_deployment_name" {
+  description = "GPT-4o deployment name"
+  value       = var.enable_llm ? module.llm_endpoint[0].gpt4o_deployment_name : null
+}
+
 # Front Door outputs (when enabled)
 output "frontdoor_endpoint_hostname" {
   description = "Azure Front Door endpoint hostname"
