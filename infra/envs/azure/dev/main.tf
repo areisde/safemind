@@ -7,7 +7,7 @@ terraform {
   }
   backend "azurerm" {
     resource_group_name  = "tfstate-rg"
-    storage_account_name = "tfstorage26698"   # << literal; script passes actual SA via -backend-config
+    storage_account_name = "tfstorage26698"
     container_name       = "state"
     key                  = "dev-azure.tfstate"
   }
@@ -16,11 +16,8 @@ terraform {
 provider "azurerm" {
   features {}
   
-  # Use Service Principal authentication when running in CI/CD
-  # These environment variables are automatically set by azure/login action
-  use_cli                = false
-  use_msi                = false
-  skip_provider_registration = false
+  # When ARM_* environment variables are set (CI/CD), use Service Principal auth
+  # When not set (local development), fall back to Azure CLI auth
 }
 
 # ── 1) VNet (flat) ────────────────────────────────────────────────────────────

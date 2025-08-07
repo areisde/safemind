@@ -47,10 +47,7 @@ jobs:
       
       - name: Terraform Init
         working-directory: infra/envs/azure/dev
-        run: |
-          terraform init \
-            -backend-config="storage_account_name=${{ secrets.TERRAFORM_STORAGE_ACCOUNT }}" \
-            -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RG }}"
+        run: terraform init
       
       - name: Terraform Plan
         working-directory: infra/envs/azure/dev
