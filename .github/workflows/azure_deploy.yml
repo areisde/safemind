@@ -140,57 +140,40 @@ jobs:
 
       - name: Cleanup Existing Deployments
         run: |
-          echo "🧹 Cleaning up existing deployments for fresh start..."
+          echo "🧹 Quick cleanup of potential conflicts..."
           
-          # More comprehensive Helm cleanup with proper resource deletion
-          echo "Removing existing Helm releases with full cleanup..."
+          # Quick check if namespaces exist
+          LLM_EXISTS=$(kubectl --kubeconfig=kubeconfig get namespace llm --ignore-not-found=true -o name)
+          OBS_EXISTS=$(kubectl --kubeconfig=kubeconfig get namespace observability --ignore-not-found=true -o name)
           
-          # Uninstall Helm releases and wait for complete removal
-          helm --kubeconfig=kubeconfig uninstall kong -n llm --wait || echo "Kong release not found"
-          helm --kubeconfig=kubeconfig uninstall guardrail -n llm --wait || echo "Guardrail release not found"
-          helm --kubeconfig=kubeconfig uninstall llm-proxy -n llm --wait || echo "LLM Proxy release not found"
-          helm --kubeconfig=kubeconfig uninstall loki -n observability --wait || echo "Loki release not found"
-          helm --kubeconfig=kubeconfig uninstall prometheus -n observability --wait || echo "Prometheus release not found"
-          helm --kubeconfig=kubeconfig uninstall grafana -n observability --wait || echo "Grafana release not found"
-          
-          # Wait for Helm releases to be fully removed
-          echo "⏳ Waiting for Helm releases to be completely removed..."
-          sleep 30
-          
-          # Force delete remaining resources by type (including those missed by Helm)
-          echo "Force cleaning all remaining resources..."
-          for namespace in llm observability; do
-            echo "Cleaning namespace: $namespace"
+          if [[ -n "$LLM_EXISTS" ]]; then
+            echo "📦 LLM namespace exists, cleaning up deployments for fresh install..."
+            # Only clean up deployments and pods, keep other resources
+            kubectl --kubeconfig=kubeconfig delete deployments --all -n llm --ignore-not-found=true --timeout=60s || echo "LLM deployments cleared"
+            kubectl --kubeconfig=kubeconfig delete pods --all -n llm --ignore-not-found=true --force --grace-period=0 || echo "LLM pods force-deleted"
             
-            # Delete all workload resources
-            kubectl --kubeconfig=kubeconfig delete deployments,statefulsets,daemonsets,replicasets,jobs,cronjobs --all -n $namespace --ignore-not-found=true --force --grace-period=0 || echo "Workloads cleared in $namespace"
-            
-            # Delete all networking resources
-            kubectl --kubeconfig=kubeconfig delete services,ingresses,networkpolicies --all -n $namespace --ignore-not-found=true --force --grace-period=0 || echo "Networking cleared in $namespace"
-            
-            # Delete all configuration and storage resources
-            kubectl --kubeconfig=kubeconfig delete configmaps,secrets,persistentvolumeclaims --all -n $namespace --ignore-not-found=true --force --grace-period=0 || echo "Config/storage cleared in $namespace"
-            
-            # Delete all RBAC resources
-            kubectl --kubeconfig=kubeconfig delete serviceaccounts,roles,rolebindings,clusterroles,clusterrolebindings --all -n $namespace --ignore-not-found=true --force --grace-period=0 || echo "RBAC cleared in $namespace"
-            
-            # Force delete any remaining pods
-            kubectl --kubeconfig=kubeconfig delete pods --all -n $namespace --ignore-not-found=true --force --grace-period=0 || echo "Pods force-deleted in $namespace"
-          done
+            # Clean up potential service account conflicts
+            kubectl --kubeconfig=kubeconfig delete serviceaccount guardrail -n llm --ignore-not-found=true || echo "Guardrail SA cleaned"
+            kubectl --kubeconfig=kubeconfig delete serviceaccount llm-proxy -n llm --ignore-not-found=true || echo "LLM Proxy SA cleaned"
+          else
+            echo "✅ No LLM namespace found, starting fresh"
+          fi
           
-          # Delete the namespaces completely
-          echo "Deleting namespaces completely..."
-          kubectl --kubeconfig=kubeconfig delete namespace llm --ignore-not-found=true --force --grace-period=0 || echo "LLM namespace force-deleted"
-          kubectl --kubeconfig=kubeconfig delete namespace observability --ignore-not-found=true --force --grace-period=0 || echo "Observability namespace force-deleted"
+          if [[ -n "$OBS_EXISTS" ]]; then
+            echo "📦 Observability namespace exists, cleaning up deployments for fresh install..."
+            # Only clean up deployments and pods, keep PVCs and other resources
+            kubectl --kubeconfig=kubeconfig delete deployments,statefulsets --all -n observability --ignore-not-found=true --timeout=60s || echo "Observability workloads cleared"
+            kubectl --kubeconfig=kubeconfig delete pods --all -n observability --ignore-not-found=true --force --grace-period=0 || echo "Observability pods force-deleted"
+          else
+            echo "✅ No Observability namespace found, starting fresh"
+          fi
           
-          # Wait for complete cleanup
-          echo "⏳ Waiting for complete namespace cleanup..."
-          sleep 45
+          # Quick wait for pod cleanup
+          echo "⏳ Waiting for pod cleanup (15s)..."
+          sleep 15
           
-          # Show current state
-          echo "📊 Current cluster state after cleanup:"
-          kubectl --kubeconfig=kubeconfig get pods --all-namespaces | grep -E "(llm|observability)" || echo "✅ No MLOps pods remaining"
-          kubectl --kubeconfig=kubeconfig get namespaces
+          echo "📊 Current cluster state after quick cleanup:"
+          kubectl --kubeconfig=kubeconfig get pods --all-namespaces | grep -E "(llm|observability)" || echo "✅ Target namespaces clean"
 
       - name: Deploy Kong Gateway
         run: |
@@ -206,9 +189,9 @@ jobs:
             --docker-email=${{ github.actor }}@users.noreply.github.com \
             --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
           
-          # Install Kong as ingress controller with retry logic
+          # Install Kong as ingress controller with force upgrade
           echo "🔍 Installing Kong Gateway..."
-          if ! helm upgrade --install kong kong/kong \
+          helm upgrade --install kong kong/kong \
             --namespace llm \
             --set ingressController.enabled=true \
             --set admin.enabled=true \
@@ -216,29 +199,12 @@ jobs:
             --set proxy.type=LoadBalancer \
             --wait \
             --timeout 8m \
-            --kubeconfig kubeconfig; then
-            
-            echo "⚠️ Kong deployment failed, attempting retry..."
-            # Clean up failed Kong deployment
-            helm --kubeconfig=kubeconfig uninstall kong -n llm || echo "No kong release to remove"
-            kubectl --kubeconfig=kubeconfig delete all -l app.kubernetes.io/name=kong -n llm --ignore-not-found=true || echo "Kong resources cleaned"
-            sleep 15
-            
-            # Retry Kong installation
-            helm install kong kong/kong \
-              --namespace llm \
-              --set ingressController.enabled=true \
-              --set admin.enabled=true \
-              --set admin.http.enabled=true \
-              --set proxy.type=LoadBalancer \
-              --wait \
-              --timeout 8m \
-              --kubeconfig kubeconfig || {
-                echo "❌ Kong deployment failed on retry"
-                kubectl --kubeconfig=kubeconfig get pods -n llm
-                exit 1
-              }
-          fi
+            --force \
+            --kubeconfig kubeconfig || {
+              echo "❌ Kong deployment failed"
+              kubectl --kubeconfig=kubeconfig get pods -n llm
+              exit 1
+            }
           
           echo "✅ Kong Gateway deployed successfully"
 
@@ -329,39 +295,23 @@ jobs:
             --docker-email=${{ github.actor }}@users.noreply.github.com \
             --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
           
-          # Deploy Guardrail service with conflict resolution
+          # Deploy Guardrail service with conflict handling
           echo "🔍 Deploying Guardrail service..."
-          # First attempt: try normal upgrade/install
-          if ! helm upgrade --install guardrail charts/guardrail \
+          helm upgrade --install guardrail charts/guardrail \
                --namespace llm \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/guardrail \
                --set image.tag=${{ github.sha }} \
                --timeout 5m \
-               --kubeconfig kubeconfig; then
-            
-            echo "⚠️ Guardrail deployment failed, attempting cleanup and retry..."
-            # Cleanup any partial deployment
-            helm --kubeconfig=kubeconfig uninstall guardrail -n llm || echo "No guardrail release to remove"
-            kubectl --kubeconfig=kubeconfig delete all -l app.kubernetes.io/name=guardrail -n llm --ignore-not-found=true || echo "Guardrail resources cleaned"
-            sleep 10
-            
-            # Second attempt: fresh install
-            helm install guardrail charts/guardrail \
-                 --namespace llm \
-                 --set image.repository=ghcr.io/${{ github.repository_owner }}/guardrail \
-                 --set image.tag=${{ github.sha }} \
-                 --timeout 5m \
-                 --kubeconfig kubeconfig || {
-              echo "❌ Guardrail deployment failed on retry"
-              kubectl --kubeconfig=kubeconfig get pods -n llm
-              kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "guardrail"
-            }
-          fi
+               --force \
+               --kubeconfig kubeconfig || {
+            echo "⚠️ Guardrail deployment failed, checking status..."
+            kubectl --kubeconfig=kubeconfig get pods -n llm
+            kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "guardrail" || echo "No guardrail pods found"
+          }
           
-          # Deploy LLM Proxy service with conflict resolution
+          # Deploy LLM Proxy service with conflict handling
           echo "🔍 Deploying LLM Proxy service..."
-          # First attempt: try normal upgrade/install
-          if ! helm upgrade --install llm-proxy charts/llm-proxy \
+          helm upgrade --install llm-proxy charts/llm-proxy \
                --namespace llm \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/llm-proxy \
                --set image.tag=${{ github.sha }} \
@@ -370,30 +320,12 @@ jobs:
                --set env.AZURE_OPENAI_DEPLOYMENT_NAME="${{ needs.infrastructure.outputs.gpt4o_deployment_name }}" \
                --set env.AZURE_OPENAI_API_VERSION="2024-08-01-preview" \
                --timeout 5m \
-               --kubeconfig kubeconfig; then
-            
-            echo "⚠️ LLM Proxy deployment failed, attempting cleanup and retry..."
-            # Cleanup any partial deployment
-            helm --kubeconfig=kubeconfig uninstall llm-proxy -n llm || echo "No llm-proxy release to remove"
-            kubectl --kubeconfig=kubeconfig delete all -l app.kubernetes.io/name=llm-proxy -n llm --ignore-not-found=true || echo "LLM Proxy resources cleaned"
-            sleep 10
-            
-            # Second attempt: fresh install
-            helm install llm-proxy charts/llm-proxy \
-                 --namespace llm \
-                 --set image.repository=ghcr.io/${{ github.repository_owner }}/llm-proxy \
-                 --set image.tag=${{ github.sha }} \
-                 --set env.AZURE_OPENAI_ENDPOINT="${{ needs.infrastructure.outputs.azure_openai_endpoint }}" \
-                 --set env.AZURE_OPENAI_API_KEY="${{ needs.infrastructure.outputs.azure_openai_api_key }}" \
-                 --set env.AZURE_OPENAI_DEPLOYMENT_NAME="${{ needs.infrastructure.outputs.gpt4o_deployment_name }}" \
-                 --set env.AZURE_OPENAI_API_VERSION="2024-08-01-preview" \
-                 --timeout 5m \
-                 --kubeconfig kubeconfig || {
-              echo "❌ LLM Proxy deployment failed on retry"
-              kubectl --kubeconfig=kubeconfig get pods -n llm
-              kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "llm-proxy"
-            }
-          fi
+               --force \
+               --kubeconfig kubeconfig || {
+            echo "⚠️ LLM Proxy deployment failed, checking status..."
+            kubectl --kubeconfig=kubeconfig get pods -n llm
+            kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "llm-proxy" || echo "No llm-proxy pods found"
+          }
           
           # Show current pod status for debugging
           echo "📊 Current pod status in llm namespace:"
