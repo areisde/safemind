@@ -91,8 +91,7 @@ jobs:
               RUNNER_WORKDIR="/tmp/runner" \
             --secure-environment-variables \
               ACCESS_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
-            --restart-policy Never \
-            --dns-name-label "github-runner-dev-${{ github.run_id }}"
+            --restart-policy Never
           
           # Wait for runner to register and show status
           echo "Waiting for runner to register with GitHub..."
