@@ -2,33 +2,33 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: llm-gateway
-  namespace: llm          # same ns as the services
+  namespace: llm
   annotations:
-    konghq.com/plugins: keyauth,ratelimit  # (optional) cluster-wide plugins
+    konghq.com/plugins: "keyauth,ip-restriction,company-rate-limit"
     cert-manager.io/cluster-issuer: letsencrypt-staging
+    cert-manager.io/acme-challenge-type: "http01"
     konghq.com/protocols: "http,https"
 spec:
   ingressClassName: kong
   rules:
-  - host: llm.localtest.dev 
+  - host: {{ .Values.ingress.host | default "agent.reisdematos.ch" | quote }}
     http:
       paths:
-      # hit guard-rail first – it decides whether to forward internally
       - path: /sanitize
         pathType: Prefix
         backend:
           service:
             name: guardrail
             port: 
-              number: 8000
+              number: 80
       - path: /chat
         pathType: Prefix
         backend:
           service: 
             name: guardrail
             port: 
-              number: 8000
+              number: 80
   tls:
   - hosts:
-      - llm.localtest.dev # must resolve to your LoadBalancer IP
-    secretName: llm-tls
+      - {{ .Values.ingress.host | default "agent.reisdematos.ch" | quote }}
+    secretName: {{ .Values.ingress.tls.secretName | default "llm-tls" | quote }}

@@ -1,0 +1,78 @@
+# Azure Front Door with Web Application Firewall
+# This provides enterprise-grade security with geo-filtering, IP whitelisting, and DDoS protection
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: azure-frontdoor-config
+  namespace: llm
+data:
+  setup-guide.md: |
+    # Azure Front Door Setup for MLOps Security
+    
+    ## 1. Create Azure Front Door Profile
+    ```bash
+    az afd profile create \
+      --profile-name "mlops-frontdoor" \
+      --resource-group "mlops-dev" \
+      --sku "Premium_AzureFrontDoor"
+    ```
+    
+    ## 2. Create WAF Policy
+    ```bash
+    az network front-door waf-policy create \
+      --resource-group "mlops-dev" \
+      --name "mlopsWafPolicy" \
+      --sku "Premium_AzureFrontDoor"
+    ```
+    
+    ## 3. Configure IP Whitelist Rule
+    ```bash
+    az network front-door waf-policy rule create \
+      --resource-group "mlops-dev" \
+      --policy-name "mlopsWafPolicy" \
+      --name "AllowCompanyIPs" \
+      --priority 100 \
+      --rule-type "MatchRule" \
+      --action "Allow" \
+      --match-condition "RemoteAddr" "IPMatch" \
+        "YOUR_OFFICE_IP/32,YOUR_VPN_RANGE/24"
+    ```
+    
+    ## 4. Configure Geo-filtering
+    ```bash
+    az network front-door waf-policy rule create \
+      --resource-group "mlops-dev" \
+      --policy-name "mlopsWafPolicy" \
+      --name "GeoFilter" \
+      --priority 200 \
+      --rule-type "MatchRule" \
+      --action "Allow" \
+      --match-condition "RemoteAddr" "GeoMatch" "CH,US,DE"
+    ```
+    
+    ## 5. Create Endpoint pointing to agent.reisdematos.ch
+    ```bash
+    az afd endpoint create \
+      --resource-group "mlops-dev" \
+      --profile-name "mlops-frontdoor" \
+      --endpoint-name "mlops-api" \
+      --origin-host-header "agent.reisdematos.ch" \
+      --enabled true
+    ```
+    
+    ## Benefits:
+    - DDoS Protection (up to 100 Gbps)
+    - IP Whitelisting
+    - Geo-blocking
+    - Rate limiting
+    - SSL termination
+    - Caching for better performance
+    - Analytics and monitoring
+    
+    ## Company Access Pattern:
+    1. Employees connect via: mlops-api-xyz.azurefd.net
+    2. Front Door validates IP/geography
+    3. Forwards to: agent.reisdematos.ch (your AKS)
+    4. Kong validates API key/OAuth
+    5. Routes to AI services

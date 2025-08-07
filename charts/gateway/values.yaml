@@ -1,0 +1,47 @@
+# Gateway Chart Values
+# Default values for gateway ingress configuration
+
+ingress:
+  enabled: true
+  className: kong
+  
+  # Domain configuration - override in values.local.yaml
+  host: "example.com"  # CHANGE THIS per deployment
+  
+  # TLS configuration
+  tls:
+    enabled: true
+    secretName: "gateway-tls"
+    
+  # Certificate manager configuration
+  certManager:
+    enabled: true
+    issuer: "letsencrypt-staging"  # or letsencrypt-prod
+    
+  # Kong plugin configuration
+  plugins:
+    - keyauth
+    - ip-restriction  
+    - company-rate-limit
+    
+  # Path configuration
+  paths:
+    - path: /sanitize
+      pathType: Prefix
+      service:
+        name: guardrail
+        port: 80
+    - path: /chat
+      pathType: Prefix
+      service:
+        name: guardrail
+        port: 80
+
+# Services this ingress routes to
+services:
+  guardrail:
+    name: guardrail
+    port: 80
+  llmProxy:
+    name: llm-proxy
+    port: 8000
