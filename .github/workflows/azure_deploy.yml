@@ -143,6 +143,15 @@ jobs:
           # Create namespace for LLM services (Kong will be installed here)
           kubectl --kubeconfig=kubeconfig create namespace llm --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
           
+          # Create GitHub Container Registry pull secret
+          kubectl --kubeconfig=kubeconfig create secret docker-registry ghcr-pull \
+            --namespace llm \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            --docker-email=${{ github.actor }}@users.noreply.github.com \
+            --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
+          
           # Install Kong as ingress controller
           helm upgrade --install kong kong/kong \
             --namespace llm \
