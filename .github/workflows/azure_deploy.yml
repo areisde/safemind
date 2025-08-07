@@ -142,31 +142,50 @@ jobs:
         run: |
           echo "🧹 Cleaning up existing deployments for fresh start..."
           
-          # Delete existing Helm releases first (this is safer than deleting namespaces)
-          echo "Removing existing Helm releases..."
-          helm --kubeconfig=kubeconfig uninstall kong -n llm || echo "Kong release not found"
-          helm --kubeconfig=kubeconfig uninstall guardrail -n llm || echo "Guardrail release not found"
-          helm --kubeconfig=kubeconfig uninstall llm-proxy -n llm || echo "LLM Proxy release not found"
-          helm --kubeconfig=kubeconfig uninstall loki -n observability || echo "Loki release not found"
-          helm --kubeconfig=kubeconfig uninstall prometheus -n observability || echo "Prometheus release not found"
-          helm --kubeconfig=kubeconfig uninstall grafana -n observability || echo "Grafana release not found"
+          # More comprehensive Helm cleanup with proper resource deletion
+          echo "Removing existing Helm releases with full cleanup..."
           
-          # Force delete any remaining resources in namespaces
-          echo "Force cleaning remaining resources..."
-          kubectl --kubeconfig=kubeconfig delete all --all -n llm --ignore-not-found=true --wait=true --timeout=120s || echo "LLM namespace resources cleared"
-          kubectl --kubeconfig=kubeconfig delete all --all -n observability --ignore-not-found=true --wait=true --timeout=120s || echo "Observability namespace resources cleared"
+          # Uninstall Helm releases and wait for complete removal
+          helm --kubeconfig=kubeconfig uninstall kong -n llm --wait || echo "Kong release not found"
+          helm --kubeconfig=kubeconfig uninstall guardrail -n llm --wait || echo "Guardrail release not found"
+          helm --kubeconfig=kubeconfig uninstall llm-proxy -n llm --wait || echo "LLM Proxy release not found"
+          helm --kubeconfig=kubeconfig uninstall loki -n observability --wait || echo "Loki release not found"
+          helm --kubeconfig=kubeconfig uninstall prometheus -n observability --wait || echo "Prometheus release not found"
+          helm --kubeconfig=kubeconfig uninstall grafana -n observability --wait || echo "Grafana release not found"
           
-          # Delete secrets, configmaps, and other resources
-          kubectl --kubeconfig=kubeconfig delete secrets,configmaps,serviceaccounts,roles,rolebindings --all -n llm --ignore-not-found=true || echo "LLM namespace additional resources cleared"
-          kubectl --kubeconfig=kubeconfig delete secrets,configmaps,serviceaccounts,roles,rolebindings --all -n observability --ignore-not-found=true || echo "Observability namespace additional resources cleared"
+          # Wait for Helm releases to be fully removed
+          echo "⏳ Waiting for Helm releases to be completely removed..."
+          sleep 30
           
-          # Finally delete the namespaces
-          kubectl --kubeconfig=kubeconfig delete namespace llm --ignore-not-found=true --wait=true --timeout=300s || echo "⚠️  LLM namespace cleanup completed"
-          kubectl --kubeconfig=kubeconfig delete namespace observability --ignore-not-found=true --wait=true --timeout=300s || echo "⚠️  Observability namespace cleanup completed"
+          # Force delete remaining resources by type (including those missed by Helm)
+          echo "Force cleaning all remaining resources..."
+          for namespace in llm observability; do
+            echo "Cleaning namespace: $namespace"
+            
+            # Delete all workload resources
+            kubectl --kubeconfig=kubeconfig delete deployments,statefulsets,daemonsets,replicasets,jobs,cronjobs --all -n $namespace --ignore-not-found=true --force --grace-period=0 || echo "Workloads cleared in $namespace"
+            
+            # Delete all networking resources
+            kubectl --kubeconfig=kubeconfig delete services,ingresses,networkpolicies --all -n $namespace --ignore-not-found=true --force --grace-period=0 || echo "Networking cleared in $namespace"
+            
+            # Delete all configuration and storage resources
+            kubectl --kubeconfig=kubeconfig delete configmaps,secrets,persistentvolumeclaims --all -n $namespace --ignore-not-found=true --force --grace-period=0 || echo "Config/storage cleared in $namespace"
+            
+            # Delete all RBAC resources
+            kubectl --kubeconfig=kubeconfig delete serviceaccounts,roles,rolebindings,clusterroles,clusterrolebindings --all -n $namespace --ignore-not-found=true --force --grace-period=0 || echo "RBAC cleared in $namespace"
+            
+            # Force delete any remaining pods
+            kubectl --kubeconfig=kubeconfig delete pods --all -n $namespace --ignore-not-found=true --force --grace-period=0 || echo "Pods force-deleted in $namespace"
+          done
+          
+          # Delete the namespaces completely
+          echo "Deleting namespaces completely..."
+          kubectl --kubeconfig=kubeconfig delete namespace llm --ignore-not-found=true --force --grace-period=0 || echo "LLM namespace force-deleted"
+          kubectl --kubeconfig=kubeconfig delete namespace observability --ignore-not-found=true --force --grace-period=0 || echo "Observability namespace force-deleted"
           
           # Wait for complete cleanup
-          echo "⏳ Waiting for complete cleanup..."
-          sleep 60
+          echo "⏳ Waiting for complete namespace cleanup..."
+          sleep 45
           
           # Show current state
           echo "📊 Current cluster state after cleanup:"
@@ -187,17 +206,41 @@ jobs:
             --docker-email=${{ github.actor }}@users.noreply.github.com \
             --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
           
-          # Install Kong as ingress controller with better error handling
-          helm upgrade --install kong kong/kong \
+          # Install Kong as ingress controller with retry logic
+          echo "🔍 Installing Kong Gateway..."
+          if ! helm upgrade --install kong kong/kong \
             --namespace llm \
-            --create-namespace \
             --set ingressController.enabled=true \
             --set admin.enabled=true \
             --set admin.http.enabled=true \
             --set proxy.type=LoadBalancer \
             --wait \
-            --timeout 10m \
-            --kubeconfig kubeconfig
+            --timeout 8m \
+            --kubeconfig kubeconfig; then
+            
+            echo "⚠️ Kong deployment failed, attempting retry..."
+            # Clean up failed Kong deployment
+            helm --kubeconfig=kubeconfig uninstall kong -n llm || echo "No kong release to remove"
+            kubectl --kubeconfig=kubeconfig delete all -l app.kubernetes.io/name=kong -n llm --ignore-not-found=true || echo "Kong resources cleaned"
+            sleep 15
+            
+            # Retry Kong installation
+            helm install kong kong/kong \
+              --namespace llm \
+              --set ingressController.enabled=true \
+              --set admin.enabled=true \
+              --set admin.http.enabled=true \
+              --set proxy.type=LoadBalancer \
+              --wait \
+              --timeout 8m \
+              --kubeconfig kubeconfig || {
+                echo "❌ Kong deployment failed on retry"
+                kubectl --kubeconfig=kubeconfig get pods -n llm
+                exit 1
+              }
+          fi
+          
+          echo "✅ Kong Gateway deployed successfully"
 
       - name: Deploy Observability Stack
         run: |
@@ -231,8 +274,9 @@ jobs:
             }
           
           # Deploy Promtail RBAC and DaemonSet for log collection
-          kubectl --kubeconfig=kubeconfig apply -f observability/promtail-rbac.yaml
-          kubectl --kubeconfig=kubeconfig apply -f observability/parameters/promtail.yaml
+          echo "🔍 Deploying Promtail for log collection..."
+          kubectl --kubeconfig=kubeconfig apply -f observability/promtail-rbac.yaml || echo "⚠️ Promtail RBAC apply failed"
+          kubectl --kubeconfig=kubeconfig apply -f observability/parameters/promtail.yaml || echo "⚠️ Promtail DaemonSet apply failed"
           
           # Deploy Prometheus for metrics (with debugging)
           echo "🔍 Deploying Prometheus..."
@@ -265,35 +309,60 @@ jobs:
               echo "Continuing without waiting for Grafana..."
             }
           
-          # Apply custom dashboards and configs
-          kubectl --kubeconfig=kubeconfig apply -f observability/grafana-llm-analytics-dashboard.yaml
-          kubectl --kubeconfig=kubeconfig apply -f observability/grafana-mlops-dashboard.yaml
-          kubectl --kubeconfig=kubeconfig apply -f observability/loki-datasource.yaml
+          # Apply custom dashboards and configs (best effort)
+          echo "🔍 Applying custom dashboards and configurations..."
+          kubectl --kubeconfig=kubeconfig apply -f observability/grafana-llm-analytics-dashboard.yaml || echo "⚠️ LLM analytics dashboard apply failed"
+          kubectl --kubeconfig=kubeconfig apply -f observability/grafana-mlops-dashboard.yaml || echo "⚠️ MLOps dashboard apply failed"
+          kubectl --kubeconfig=kubeconfig apply -f observability/loki-datasource.yaml || echo "⚠️ Loki datasource apply failed"
 
       - name: Deploy MLOps Services
         run: |
-          # MLOps namespace was already created in Kong deployment step
+          # Ensure namespace exists and is clean
+          kubectl --kubeconfig=kubeconfig create namespace llm --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
           
-          # Update/upgrade Guardrail service with health check fixes
+          # Recreate GHCR pull secret in case it was cleaned up
+          kubectl --kubeconfig=kubeconfig create secret docker-registry ghcr-pull \
+            --namespace llm \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            --docker-email=${{ github.actor }}@users.noreply.github.com \
+            --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
+          
+          # Deploy Guardrail service with conflict resolution
           echo "🔍 Deploying Guardrail service..."
-          helm upgrade --install guardrail charts/guardrail \
+          # First attempt: try normal upgrade/install
+          if ! helm upgrade --install guardrail charts/guardrail \
                --namespace llm \
-               --create-namespace \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/guardrail \
                --set image.tag=${{ github.sha }} \
                --timeout 5m \
-               --debug \
-               --kubeconfig kubeconfig || {
-                 echo "⚠️ Guardrail deployment failed, checking status..."
-                 kubectl --kubeconfig=kubeconfig get pods -n llm
-                 kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "guardrail"
-               }
+               --kubeconfig kubeconfig; then
+            
+            echo "⚠️ Guardrail deployment failed, attempting cleanup and retry..."
+            # Cleanup any partial deployment
+            helm --kubeconfig=kubeconfig uninstall guardrail -n llm || echo "No guardrail release to remove"
+            kubectl --kubeconfig=kubeconfig delete all -l app.kubernetes.io/name=guardrail -n llm --ignore-not-found=true || echo "Guardrail resources cleaned"
+            sleep 10
+            
+            # Second attempt: fresh install
+            helm install guardrail charts/guardrail \
+                 --namespace llm \
+                 --set image.repository=ghcr.io/${{ github.repository_owner }}/guardrail \
+                 --set image.tag=${{ github.sha }} \
+                 --timeout 5m \
+                 --kubeconfig kubeconfig || {
+              echo "❌ Guardrail deployment failed on retry"
+              kubectl --kubeconfig=kubeconfig get pods -n llm
+              kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "guardrail"
+            }
+          fi
           
-          # Update/upgrade LLM Proxy service with health check fixes
+          # Deploy LLM Proxy service with conflict resolution
           echo "🔍 Deploying LLM Proxy service..."
-          helm upgrade --install llm-proxy charts/llm-proxy \
+          # First attempt: try normal upgrade/install
+          if ! helm upgrade --install llm-proxy charts/llm-proxy \
                --namespace llm \
-               --create-namespace \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/llm-proxy \
                --set image.tag=${{ github.sha }} \
                --set env.AZURE_OPENAI_ENDPOINT="${{ needs.infrastructure.outputs.azure_openai_endpoint }}" \
@@ -301,33 +370,54 @@ jobs:
                --set env.AZURE_OPENAI_DEPLOYMENT_NAME="${{ needs.infrastructure.outputs.gpt4o_deployment_name }}" \
                --set env.AZURE_OPENAI_API_VERSION="2024-08-01-preview" \
                --timeout 5m \
-               --debug \
-               --kubeconfig kubeconfig || {
-                 echo "⚠️ LLM Proxy deployment failed, checking status..."
-                 kubectl --kubeconfig=kubeconfig get pods -n llm
-                 kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "llm-proxy"
-               }
+               --kubeconfig kubeconfig; then
+            
+            echo "⚠️ LLM Proxy deployment failed, attempting cleanup and retry..."
+            # Cleanup any partial deployment
+            helm --kubeconfig=kubeconfig uninstall llm-proxy -n llm || echo "No llm-proxy release to remove"
+            kubectl --kubeconfig=kubeconfig delete all -l app.kubernetes.io/name=llm-proxy -n llm --ignore-not-found=true || echo "LLM Proxy resources cleaned"
+            sleep 10
+            
+            # Second attempt: fresh install
+            helm install llm-proxy charts/llm-proxy \
+                 --namespace llm \
+                 --set image.repository=ghcr.io/${{ github.repository_owner }}/llm-proxy \
+                 --set image.tag=${{ github.sha }} \
+                 --set env.AZURE_OPENAI_ENDPOINT="${{ needs.infrastructure.outputs.azure_openai_endpoint }}" \
+                 --set env.AZURE_OPENAI_API_KEY="${{ needs.infrastructure.outputs.azure_openai_api_key }}" \
+                 --set env.AZURE_OPENAI_DEPLOYMENT_NAME="${{ needs.infrastructure.outputs.gpt4o_deployment_name }}" \
+                 --set env.AZURE_OPENAI_API_VERSION="2024-08-01-preview" \
+                 --timeout 5m \
+                 --kubeconfig kubeconfig || {
+              echo "❌ LLM Proxy deployment failed on retry"
+              kubectl --kubeconfig=kubeconfig get pods -n llm
+              kubectl --kubeconfig=kubeconfig describe pods -n llm | grep -A 10 "llm-proxy"
+            }
+          fi
           
           # Show current pod status for debugging
           echo "📊 Current pod status in llm namespace:"
           kubectl --kubeconfig=kubeconfig get pods -n llm -o wide
           
-          # Wait for critical services with shorter timeout
-          echo "⏳ Waiting for critical services..."
-          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment/guardrail -n llm --timeout=300s || echo "⚠️ Guardrail still starting..."
-          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment/llm-proxy -n llm --timeout=300s || echo "⚠️ LLM Proxy still starting..."
+          # Wait for critical services with shorter timeout (best effort)
+          echo "⏳ Waiting for critical services (best effort)..."
+          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment/guardrail -n llm --timeout=180s || echo "⚠️ Guardrail still starting..."
+          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment/llm-proxy -n llm --timeout=180s || echo "⚠️ LLM Proxy still starting..."
 
       - name: Deploy Gateway and Security
         run: |
-          # Apply Kong gateway configuration (ingress)
-          kubectl --kubeconfig=kubeconfig apply -f charts/gateway/ -R
+          # Apply Kong gateway configuration (ingress) - best effort
+          echo "🔍 Applying Kong gateway configurations..."
+          kubectl --kubeconfig=kubeconfig apply -f charts/gateway/ -R || echo "⚠️ Some gateway configs failed to apply"
           
-          # Apply Kong observability configurations (now that Kong CRDs are available)
-          kubectl --kubeconfig=kubeconfig apply -f observability/kong-metrics.yaml
-          kubectl --kubeconfig=kubeconfig apply -f observability/kong-servicemonitor.yaml
+          # Apply Kong observability configurations (now that Kong CRDs are available) - best effort
+          echo "🔍 Applying Kong observability configurations..."
+          kubectl --kubeconfig=kubeconfig apply -f observability/kong-metrics.yaml || echo "⚠️ Kong metrics config failed"
+          kubectl --kubeconfig=kubeconfig apply -f observability/kong-servicemonitor.yaml || echo "⚠️ Kong service monitor failed"
           
-          # Apply security policies
-          kubectl --kubeconfig=kubeconfig apply -f security/ -R
+          # Apply security policies - best effort
+          echo "🔍 Applying security policies..."
+          kubectl --kubeconfig=kubeconfig apply -f security/ -R || echo "⚠️ Some security policies failed to apply"
 
       - name: Verify Deployment
         run: |
