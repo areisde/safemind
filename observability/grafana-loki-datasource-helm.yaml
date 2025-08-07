@@ -1,6 +1,0 @@
-grafana:
-  extraConfigmapMounts:
-    - name: grafana-loki-datasource
-      mountPath: /etc/grafana/provisioning/datasources/loki/
-      configMap: grafana-loki-datasource
-      readOnly: true

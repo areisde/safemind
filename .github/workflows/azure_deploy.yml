@@ -1,0 +1,171 @@
+name: Deploy MLOps Platform
+on: 
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  AZURE_RESOURCE_GROUP: k8s-dev-aks-rg
+  AKS_CLUSTER_NAME: k8s-dev
+  IMAGE_GUARDRAIL: ghcr.io/${{ github.repository_owner }}/guardrail:${{ github.sha }}
+  IMAGE_PROXY: ghcr.io/${{ github.repository_owner }}/llm-proxy:${{ github.sha }}
+
+jobs:
+  infrastructure:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      kubeconfig: ${{ steps.get-kubeconfig.outputs.kubeconfig }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+      
+      - name: Terraform Init
+        working-directory: infra/envs/azure/dev
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=${{ secrets.TERRAFORM_STORAGE_ACCOUNT }}" \
+            -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RG }}"
+      
+      - name: Terraform Plan
+        working-directory: infra/envs/azure/dev
+        run: terraform plan
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        working-directory: infra/envs/azure/dev
+        run: terraform apply -auto-approve
+
+      - name: Get AKS credentials
+        id: get-kubeconfig
+        run: |
+          az aks get-credentials --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --name ${{ env.AKS_CLUSTER_NAME }} --file kubeconfig
+          echo "kubeconfig=$(cat kubeconfig | base64 -w 0)" >> $GITHUB_OUTPUT
+
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build & push Guardrail
+        run: |
+          docker build -t $IMAGE_GUARDRAIL services/guardrail
+          docker push $IMAGE_GUARDRAIL
+
+      - name: Build & push LLM-proxy
+        run: |
+          docker build -t $IMAGE_PROXY services/llm-proxy
+          docker push $IMAGE_PROXY
+
+  deploy:
+    needs: [infrastructure, build]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup kubectl
+        run: |
+          echo "${{ needs.infrastructure.outputs.kubeconfig }}" | base64 -d > kubeconfig
+          chmod 600 kubeconfig
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+
+      - name: Add Helm repositories
+        run: |
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+
+      - name: Deploy Observability Stack
+        run: |
+          # Create namespace
+          kubectl --kubeconfig=kubeconfig create namespace observability --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
+          
+          # Deploy Loki for logging
+          helm upgrade --install loki grafana/loki \
+            --namespace observability \
+            -f observability/config/loki.yaml \
+            --kubeconfig kubeconfig
+          
+          # Deploy Promtail RBAC and DaemonSet for log collection
+          kubectl --kubeconfig=kubeconfig apply -f observability/promtail-rbac.yaml
+          kubectl --kubeconfig=kubeconfig apply -f observability/config/promtail.yaml
+          
+          # Deploy Prometheus for metrics
+          helm upgrade --install prometheus prometheus-community/prometheus \
+            --namespace observability \
+            --kubeconfig kubeconfig
+          
+          # Deploy Grafana for dashboards
+          helm upgrade --install grafana grafana/grafana \
+            --namespace observability \
+            --set adminPassword=${{ secrets.GRAFANA_ADMIN_PASSWORD }} \
+            --kubeconfig kubeconfig
+          
+          # Apply custom dashboards and configs
+          kubectl --kubeconfig=kubeconfig apply -f observability/grafana-llm-analytics-dashboard.yaml
+          kubectl --kubeconfig=kubeconfig apply -f observability/grafana-mlops-dashboard.yaml
+          kubectl --kubeconfig=kubeconfig apply -f observability/loki-datasource.yaml
+          kubectl --kubeconfig=kubeconfig apply -f observability/kong-metrics.yaml
+          kubectl --kubeconfig=kubeconfig apply -f observability/kong-servicemonitor.yaml
+
+      - name: Deploy MLOps Services
+        run: |
+          # Create namespace for MLOps services
+          kubectl --kubeconfig=kubeconfig create namespace llm --dry-run=client -o yaml | kubectl --kubeconfig=kubeconfig apply -f -
+          
+          # Deploy Guardrail service
+          helm upgrade --install guardrail charts/guardrail \
+               --namespace llm \
+               --set image.repository=ghcr.io/${{ github.repository_owner }}/guardrail \
+               --set image.tag=${{ github.sha }} \
+               --kubeconfig kubeconfig
+          
+          # Deploy LLM Proxy service
+          helm upgrade --install llm-proxy charts/llm-proxy \
+               --namespace llm \
+               --set image.repository=ghcr.io/${{ github.repository_owner }}/llm-proxy \
+               --set image.tag=${{ github.sha }} \
+               --kubeconfig kubeconfig
+
+      - name: Deploy Gateway and Security
+        run: |
+          # Apply Kong gateway configuration
+          kubectl --kubeconfig=kubeconfig apply -f charts/gateway/ -R
+          
+          # Apply security policies
+          kubectl --kubeconfig=kubeconfig apply -f security/ -R
+
+      - name: Verify Deployment
+        run: |
+          # Wait for deployments to be ready
+          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment --all -n llm --timeout=300s
+          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment --all -n observability --timeout=300s
+          
+          # Get service endpoints
+          kubectl --kubeconfig=kubeconfig get services -A
+          kubectl --kubeconfig=kubeconfig get ingress -A

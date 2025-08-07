@@ -19,7 +19,7 @@ data:
           "type": "logs",
           "targets": [
             {
-              "expr": "{namespace=\"llm\", app_kubernetes_io_name=\"guardrail\"}",
+              "expr": "{namespace=\"llm\", container_name=\"guardrail\"}",
               "refId": "A",
               "datasource": "Loki"
             }
@@ -41,7 +41,7 @@ data:
           "type": "logs", 
           "targets": [
             {
-              "expr": "{namespace=\"llm\", app_kubernetes_io_name=\"llm-proxy\"}",
+              "expr": "{namespace=\"llm\", container_name=\"llm-proxy\"}",
               "refId": "A",
               "datasource": "Loki"
             }

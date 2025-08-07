@@ -43,8 +43,8 @@ resource "azurerm_cognitive_deployment" "gpt4o" {
     version = var.gpt4o_version
   }
 
-  sku {
-    name     = "GlobalStandard"
+  scale {
+    type     = "GlobalStandard"
     capacity = var.gpt4o_capacity
   }
 

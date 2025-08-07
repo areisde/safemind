@@ -20,6 +20,169 @@ data:
       },
       "panels": [
         {
+          "title": "Total Cost (USD) - Debug",
+          "type": "stat",
+          "targets": [
+            {
+              "expr": "sum by () (sum_over_time({namespace=\"llm\"} |= \"cost_usd\" | regexp \"cost_usd\\\":\\\\s(?P<cost_usd>[0-9.]+)\" | label_format cost_usd_float=cost_usd | unwrap cost_usd_float [1h]))",
+              "refId": "A",
+              "datasource": "Loki"
+            }
+          ],
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 0.01},
+                  {"color": "red", "value": 0.1}
+                ]
+              }
+            }
+          },
+          "options": {
+            "textMode": "auto",
+            "colorMode": "background"
+          }
+        },
+        {
+          "title": "Total Energy (kWh)",
+          "type": "stat",
+          "targets": [
+            {
+              "expr": "sum by () (sum_over_time({namespace=\"llm\"} |= \"energy_consumption_kwh\" | regexp \"energy_consumption_kwh\\\": (?P<energy>[0-9.eE+-]+)\" | label_format energy_kwh=energy | unwrap energy_kwh [1h]))",
+              "refId": "A",
+              "datasource": "Loki"
+            }
+          ],
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "kwatth",
+              "decimals": 6,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 0.001},
+                  {"color": "red", "value": 0.01}
+                ]
+              }
+            }
+          },
+          "options": {
+            "textMode": "auto",
+            "colorMode": "background"
+          }
+        },
+        {
+          "title": "Total Requests",
+          "type": "stat",
+          "targets": [
+            {
+              "expr": "count_over_time({namespace=\"llm\"} |= \"llm_request_completed\" [1h])",
+              "refId": "A",
+              "datasource": "Loki"
+            }
+          ],
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "blue", "value": 10},
+                  {"color": "purple", "value": 100}
+                ]
+              }
+            }
+          },
+          "options": {
+            "textMode": "auto",
+            "colorMode": "background"
+          }
+        },
+        {
+          "title": "Average Cost per Request",
+          "type": "stat",
+          "targets": [
+            {
+              "expr": "sum by () (sum_over_time({namespace=\"llm\"} |= \"cost_usd\" | regexp \"cost_usd\\\":\\\\s(?P<cost_usd>[0-9.]+)\" | label_format cost_usd_float=cost_usd | unwrap cost_usd_float [1h])) / count_over_time({namespace=\"llm\"} |= \"llm_request_completed\" [1h])",
+              "refId": "A",
+              "datasource": "Loki"
+            }
+          ],
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "decimals": 6,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 0.001},
+                  {"color": "red", "value": 0.01}
+                ]
+              }
+            }
+          },
+          "options": {
+            "textMode": "auto",
+            "colorMode": "background"
+          }
+        },
+        {
+          "title": "Cost Over Time",
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "sum_over_time({namespace=\"llm\"} |= \"cost_usd\" | regexp \"cost_usd\\\":\\\\s(?P<cost_usd>[0-9.]+)\" | label_format cost_usd_float=cost_usd | unwrap cost_usd_float [5m])",
+              "refId": "A",
+              "datasource": "Loki"
+            }
+          ],
+          "gridPos": {"h": 6, "w": 12, "x": 0, "y": 4},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "decimals": 6
+            }
+          }
+        },
+        {
+          "title": "Energy Consumption Over Time",
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "sum_over_time({namespace=\"llm\"} |= \"energy_consumption_kwh\" | json | unwrap energy_consumption_kwh | __error__=\"\" [5m])",
+              "refId": "A",
+              "datasource": "Loki"
+            }
+          ],
+          "gridPos": {"h": 6, "w": 12, "x": 12, "y": 4},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "kwatth",
+              "decimals": 8
+            }
+          }
+        },
+        {
           "title": "LLM Request Logs",
           "type": "logs",
           "targets": [
@@ -29,7 +192,7 @@ data:
               "datasource": "Loki"
             }
           ],
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 10},
           "options": {
             "showTime": true,
             "showLabels": false,
@@ -51,7 +214,7 @@ data:
               "datasource": "Loki"
             }
           ],
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18},
           "options": {
             "showTime": true,
             "showLabels": false,
