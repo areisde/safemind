@@ -134,12 +134,12 @@ jobs:
           # Deploy Loki for logging
           helm upgrade --install loki grafana/loki \
             --namespace observability \
-            -f observability/config/loki.yaml \
+            -f observability/parameters/loki.yaml \
             --kubeconfig kubeconfig
           
           # Deploy Promtail RBAC and DaemonSet for log collection
           kubectl --kubeconfig=kubeconfig apply -f observability/promtail-rbac.yaml
-          kubectl --kubeconfig=kubeconfig apply -f observability/config/promtail.yaml
+          kubectl --kubeconfig=kubeconfig apply -f observability/parameters/promtail.yaml
           
           # Deploy Prometheus for metrics
           helm upgrade --install prometheus prometheus-community/prometheus \
