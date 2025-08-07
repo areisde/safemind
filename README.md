@@ -130,3 +130,4 @@ pytest tests/
 - 📖 Check the [troubleshooting guide](docs/DEPLOYMENT.md#troubleshooting)
 - 🐛 [Open an issue](https://github.com/your-org/mlops/issues)
 - 💬 [Discussions](https://github.com/your-org/mlops/discussions)
+# Trigger new build to resolve GHCR permissions

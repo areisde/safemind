@@ -301,6 +301,7 @@ jobs:
                --namespace llm \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/guardrail \
                --set image.tag=${{ github.sha }} \
+               --set image.pullSecrets[0].name=ghcr-pull \
                --timeout 5m \
                --force \
                --kubeconfig kubeconfig || {
@@ -315,6 +316,7 @@ jobs:
                --namespace llm \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/llm-proxy \
                --set image.tag=${{ github.sha }} \
+               --set image.pullSecrets[0].name=ghcr-pull \
                --set env.AZURE_OPENAI_ENDPOINT="${{ needs.infrastructure.outputs.azure_openai_endpoint }}" \
                --set env.AZURE_OPENAI_API_KEY="${{ needs.infrastructure.outputs.azure_openai_api_key }}" \
                --set env.AZURE_OPENAI_DEPLOYMENT_NAME="${{ needs.infrastructure.outputs.gpt4o_deployment_name }}" \
