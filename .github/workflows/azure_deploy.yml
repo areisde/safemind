@@ -106,46 +106,17 @@ jobs:
 
       - name: Setup kubectl with Azure AD
         run: |
-          # Install kubelogin for Azure AD authentication
-          curl -L https://github.com/Azure/kubelogin/releases/latest/download/kubelogin-linux-amd64.zip -o kubelogin.zip
-          unzip kubelogin.zip
-          sudo mv bin/linux_amd64/kubelogin /usr/local/bin/
-          
-          # Extract credentials for use
-          CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')
-          CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')
-          TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')
-          
-          # Get admin credentials first to set up RBAC
-          echo "Getting admin credentials to set up RBAC..."
+          # Use admin credentials for simplicity - bypasses RBAC complexity
+          # The service principal has Azure Kubernetes Service Cluster Admin Role
+          echo "Getting admin credentials for AKS cluster..."
           az aks get-credentials \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --name ${{ env.AKS_CLUSTER_NAME }} \
             --admin \
             --overwrite-existing
           
-          # Create Kubernetes RBAC binding for the service principal using admin credentials
-          echo "Creating Kubernetes RBAC binding for service principal..."
-          kubectl create clusterrolebinding github-actions-cluster-admin \
-            --clusterrole=cluster-admin \
-            --user=$CLIENT_ID \
-            --dry-run=client -o yaml | kubectl apply -f -
-          
-          # Now switch to regular user credentials with service principal
-          echo "Switching to service principal authentication..."
-          az aks get-credentials \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name ${{ env.AKS_CLUSTER_NAME }} \
-            --overwrite-existing
-          
-          # Convert kubeconfig to use service principal authentication
-          kubelogin convert-kubeconfig -l spn \
-            --client-id $CLIENT_ID \
-            --client-secret $CLIENT_SECRET \
-            --tenant-id $TENANT_ID
-          
           # Test cluster access
-          kubectl auth can-i get nodes || echo "Service principal authenticated successfully"
+          kubectl auth can-i get nodes && echo "✅ Cluster access confirmed" || echo "❌ Cluster access failed"
 
       - name: Setup Helm
         uses: azure/setup-helm@v3
