@@ -19,6 +19,7 @@ jobs:
       azure_openai_endpoint: ${{ steps.terraform-outputs.outputs.azure_openai_endpoint }}
       azure_openai_api_key: ${{ steps.terraform-outputs.outputs.azure_openai_api_key }}
       gpt4o_deployment_name: ${{ steps.terraform-outputs.outputs.gpt4o_deployment_name }}
+      frontdoor_endpoint_hostname: ${{ steps.terraform-outputs.outputs.frontdoor_endpoint_hostname }}
     steps:
       - uses: actions/checkout@v4
       
@@ -69,6 +70,7 @@ jobs:
           echo "azure_openai_endpoint=$(terraform output -raw azure_openai_endpoint)" >> $GITHUB_OUTPUT
           echo "azure_openai_api_key=$(terraform output -raw azure_openai_api_key)" >> $GITHUB_OUTPUT
           echo "gpt4o_deployment_name=$(terraform output -raw gpt4o_deployment_name)" >> $GITHUB_OUTPUT
+          echo "frontdoor_endpoint_hostname=$(terraform output -raw frontdoor_endpoint_hostname)" >> $GITHUB_OUTPUT
 
   build:
     runs-on: ubuntu-latest
@@ -310,9 +312,20 @@ jobs:
 
       - name: Deploy Gateway and Security
         run: |
-          # Apply Kong gateway configuration (ingress) - best effort
-          echo "🔍 Applying Kong gateway configurations..."
-          kubectl apply -f charts/gateway/ -R || echo "⚠️ Some gateway configs failed to apply"
+          # Deploy Kong gateway configuration (ingress) using Helm
+          echo "🔍 Deploying Kong gateway configurations..."
+          if helm upgrade --install gateway charts/gateway/ \
+              --namespace llm \
+              --set ingress.host="${{ needs.infrastructure.outputs.frontdoor_endpoint_hostname }}" \
+              --set ingress.tls.secretName="llm-tls"; then
+            echo "✅ Gateway deployed successfully"
+          else
+            echo "⚠️ Gateway deployment failed, trying fallback..."
+            # Fallback: try without Front Door hostname (use default from values)
+            helm upgrade --install gateway charts/gateway/ \
+              --namespace llm \
+              --set ingress.tls.secretName="llm-tls" || echo "❌ Gateway deployment failed completely"
+          fi
           
           # Apply Kong observability configurations (now that Kong CRDs are available) - best effort
           echo "🔍 Applying Kong observability configurations..."

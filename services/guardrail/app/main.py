@@ -54,13 +54,3 @@ async def chat(req: ChatReq):
         resp = await cx.post(LLM_PROXY_URL, json=req.dict())
         resp.raise_for_status()
         return resp.json()
-
-@app.post("/chat/legacy")
-async def chat_legacy(req: LegacyChatReq):
-    """
-    Legacy endpoint that converts prompt to messages format
-    """
-    # Convert legacy format to new messages format
-    messages = [{"role": "user", "content": req.prompt}]
-    chat_req = ChatReq(messages=messages)
-    return await chat(chat_req)

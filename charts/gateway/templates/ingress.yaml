@@ -28,6 +28,13 @@ spec:
             name: guardrail
             port: 
               number: 80
+      - path: /healthz
+        pathType: Prefix
+        backend:
+          service:
+            name: guardrail
+            port: 
+              number: 80
   tls:
   - hosts:
       - {{ .Values.ingress.host | default "agent.reisdematos.ch" | quote }}
