@@ -34,8 +34,8 @@ resource "azurerm_cdn_frontdoor_origin_group" "aks_backend" {
 
   health_probe {
     interval_in_seconds = 100
-    path               = "/sanitize"  # Your health check endpoint
-    protocol           = "Https"
+    path               = "/healthz"  # Correct health check endpoint
+    protocol           = "Http"     # Use HTTP instead of HTTPS
     request_type       = "HEAD"
   }
 
@@ -52,11 +52,11 @@ resource "azurerm_cdn_frontdoor_origin" "aks_origin" {
   cdn_frontdoor_origin_group_id  = azurerm_cdn_frontdoor_origin_group.aks_backend.id
   enabled                        = true
 
-  certificate_name_check_enabled = true
+  certificate_name_check_enabled = false  # Disable cert check for IP-based origin
   host_name                     = var.origin_hostname
   http_port                     = 80
   https_port                    = 443
-  origin_host_header            = var.origin_hostname
+  origin_host_header            = "agent.reisdematos.ch"  # Use custom domain as host header
   priority                      = 1
   weight                        = 1000
 }
@@ -147,13 +147,16 @@ resource "azurerm_cdn_frontdoor_route" "mlops_route" {
   cdn_frontdoor_origin_ids   = [azurerm_cdn_frontdoor_origin.aks_origin.id]
   enabled                    = true
 
-  forwarding_protocol    = "HttpsOnly"
+  forwarding_protocol    = "HttpOnly"    # Use HTTP to backend
   https_redirect_enabled = true
   patterns_to_match     = ["/*"]
   supported_protocols   = ["Http", "Https"]
 
   # Apply security rules
   cdn_frontdoor_rule_set_ids = [azurerm_cdn_frontdoor_rule_set.security_rules.id]
+
+  # Associate with custom domain
+  cdn_frontdoor_custom_domain_ids = [azurerm_cdn_frontdoor_custom_domain.custom_domain.id]
 
   cache {
     query_string_caching_behavior = "IgnoreSpecifiedQueryStrings"
@@ -166,6 +169,19 @@ resource "azurerm_cdn_frontdoor_route" "mlops_route" {
       "application/javascript",
       "text/css"
     ]
+  }
+}
+
+# Custom Domain Configuration
+resource "azurerm_cdn_frontdoor_custom_domain" "custom_domain" {
+  name                     = "agent-reisdematos-ch"
+  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.mlops.id
+  dns_zone_id              = null  # Using external DNS provider (Cloudflare)
+  host_name                = "agent.reisdematos.ch"
+
+  tls {
+    certificate_type    = "ManagedCertificate"
+    minimum_tls_version = "TLS12"
   }
 }
 

@@ -6,7 +6,7 @@ ingress:
   className: kong
   
   # Domain configuration - override in values.local.yaml
-  host: "example.com"  # CHANGE THIS per deployment
+  host: "agent.reisdematos.ch"  # Custom domain for MLOps platform
   
   # TLS configuration
   tls:

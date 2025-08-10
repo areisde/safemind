@@ -21,7 +21,7 @@ enable_gateway       = true   # Enable Kong gateway
 # ────────────────────────────────────────────────
 # Front Door Configuration (if enabled)
 # ────────────────────────────────────────────────
-frontdoor_origin_hostname = "agent.reisdematos.ch"
+frontdoor_origin_hostname = "4.226.33.7"
 
 # ────────────────────────────────────────────────
 # GitHub Runner

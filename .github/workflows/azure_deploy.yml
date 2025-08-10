@@ -316,12 +316,12 @@ jobs:
           echo "🔍 Deploying Kong gateway configurations..."
           if helm upgrade --install gateway charts/gateway/ \
               --namespace llm \
-              --set ingress.host="${{ needs.infrastructure.outputs.frontdoor_endpoint_hostname }}" \
+              --set ingress.host="agent.reisdematos.ch" \
               --set ingress.tls.secretName="llm-tls"; then
             echo "✅ Gateway deployed successfully"
           else
             echo "⚠️ Gateway deployment failed, trying fallback..."
-            # Fallback: try without Front Door hostname (use default from values)
+            # Fallback: try without custom domain (use default from values)
             helm upgrade --install gateway charts/gateway/ \
               --namespace llm \
               --set ingress.tls.secretName="llm-tls" || echo "❌ Gateway deployment failed completely"

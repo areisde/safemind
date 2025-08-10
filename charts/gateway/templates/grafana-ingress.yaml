@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-ingress
+  namespace: observability
+  annotations:
+    konghq.com/protocols: "http,https"
+spec:
+  ingressClassName: kong
+  rules:
+  - host: {{ .Values.ingress.host | default "agent.reisdematos.ch" | quote }}
+    http:
+      paths:
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port: 
+              number: 80
+  tls:
+  - hosts:
+      - {{ .Values.ingress.host | default "agent.reisdematos.ch" | quote }}
+    secretName: {{ .Values.ingress.tls.secretName | default "grafana-tls" | quote }}
