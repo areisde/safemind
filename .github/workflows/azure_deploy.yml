@@ -180,6 +180,11 @@ jobs:
           
           echo "✅ Kong Gateway deployed successfully"
 
+      - name: Setup Terraform for Kong IP Update
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
       - name: Update Front Door Origin with Kong IP
         run: |
           # Set up Terraform environment variables
@@ -218,8 +223,9 @@ jobs:
               # Update terraform.tfvars with new Kong IP
               sed -i "s/frontdoor_origin_hostname.*=.*/frontdoor_origin_hostname    = \"$KONG_IP\"  # Auto-updated by workflow/" infra/envs/azure/dev/terraform.tfvars
               
-              # Apply terraform to update Front Door origin
+              # Initialize and apply terraform to update Front Door origin
               cd infra/envs/azure/dev
+              terraform init
               terraform apply -auto-approve
               echo "✅ Front Door origin updated to $KONG_IP"
             else
