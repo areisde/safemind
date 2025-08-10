@@ -180,6 +180,56 @@ jobs:
           
           echo "✅ Kong Gateway deployed successfully"
 
+      - name: Update Front Door Origin with Kong IP
+        run: |
+          # Set up Terraform environment variables
+          CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')
+          CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')
+          TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')
+          SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')
+          
+          export ARM_CLIENT_ID=$CLIENT_ID
+          export ARM_CLIENT_SECRET=$CLIENT_SECRET
+          export ARM_TENANT_ID=$TENANT_ID
+          export ARM_SUBSCRIPTION_ID=$SUBSCRIPTION_ID
+          export ARM_USE_CLI=false
+          
+          # Wait for Kong LoadBalancer to get external IP
+          echo "⏳ Waiting for Kong LoadBalancer to get external IP..."
+          
+          # Wait up to 5 minutes for external IP
+          for i in {1..30}; do
+            KONG_IP=$(kubectl get service kong-kong-proxy -n llm -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            if [[ -n "$KONG_IP" && "$KONG_IP" != "null" && "$KONG_IP" != "" ]]; then
+              echo "🔗 Kong LoadBalancer IP: $KONG_IP"
+              break
+            fi
+            echo "   Attempt $i/30: Waiting for Kong IP..."
+            sleep 10
+          done
+          
+          if [[ -n "$KONG_IP" && "$KONG_IP" != "null" && "$KONG_IP" != "" ]]; then
+            # Get current IP from terraform.tfvars
+            CURRENT_IP=$(grep "frontdoor_origin_hostname" infra/envs/azure/dev/terraform.tfvars | cut -d'"' -f2)
+            
+            if [[ "$CURRENT_IP" != "$KONG_IP" ]]; then
+              echo "🔄 Updating Front Door origin from $CURRENT_IP to $KONG_IP"
+              
+              # Update terraform.tfvars with new Kong IP
+              sed -i "s/frontdoor_origin_hostname.*=.*/frontdoor_origin_hostname    = \"$KONG_IP\"  # Auto-updated by workflow/" infra/envs/azure/dev/terraform.tfvars
+              
+              # Apply terraform to update Front Door origin
+              cd infra/envs/azure/dev
+              terraform apply -auto-approve
+              echo "✅ Front Door origin updated to $KONG_IP"
+            else
+              echo "✅ Front Door origin already points to correct IP: $KONG_IP"
+            fi
+          else
+            echo "⚠️ Could not get Kong IP after 5 minutes, Front Door origin not updated"
+            echo "   You may need to manually update frontdoor_origin_hostname in terraform.tfvars"
+          fi
+
       - name: Deploy Observability Stack
         run: |
           # Create namespace
@@ -381,3 +431,30 @@ jobs:
           # Show logs for any failing pods
           echo "📋 Checking for any failing pods..."
           kubectl get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded
+
+      - name: Final Deployment Status
+        run: |
+          echo "🎉 ========================================"
+          echo "🎉 MLOps Platform Deployment Complete!"
+          echo "🎉 ========================================"
+          
+          # Get Kong LoadBalancer IP
+          KONG_IP=$(kubectl get service kong-kong-proxy -n llm -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          
+          echo ""
+          echo "🌐 Access URLs:"
+          echo "   Custom Domain: https://agent.reisdematos.ch"
+          echo "   Front Door:    https://${{ needs.infrastructure.outputs.frontdoor_endpoint_hostname }}"
+          echo "   Kong Direct:   http://$KONG_IP"
+          echo ""
+          echo "🔗 Available Endpoints:"
+          echo "   Health Check:  https://agent.reisdematos.ch/healthz"
+          echo "   Sanitize:      https://agent.reisdematos.ch/sanitize"
+          echo "   Chat:          https://agent.reisdematos.ch/chat"
+          echo "   Grafana:       https://agent.reisdematos.ch/grafana"
+          echo ""
+          echo "📊 Resource Status:"
+          kubectl get pods -n llm --no-headers | wc -l | xargs echo "   LLM Namespace Pods:"
+          kubectl get pods -n observability --no-headers | wc -l | xargs echo "   Observability Pods:"
+          echo ""
+          echo "✅ Deployment verification complete!"

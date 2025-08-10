@@ -21,12 +21,7 @@ enable_gateway       = true   # Enable Kong gateway
 # ────────────────────────────────────────────────
 # Front Door Configuration (if enabled)
 # ────────────────────────────────────────────────
-frontdoor_origin_hostname = "4.226.33.7"
-
-# ────────────────────────────────────────────────
-# GitHub Runner
-# ────────────────────────────────────────────────
-# Note: Self-hosted runner is deployed automatically by GitHub Actions
-# using built-in GITHUB_TOKEN and repository context - no manual config needed!
+# Note: Kong LoadBalancer IP is updated automatically by GitHub Actions after deployment
+frontdoor_origin_hostname    = "0.0.0.0"  # Placeholder - updated by workflow
 
 
