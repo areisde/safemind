@@ -24,16 +24,27 @@ data:
     serve_from_sub_path = true
 
 ---
-# Grafana Service for Kong Ingress
+# Grafana Service for Kong Ingress (Endpoint-based instead of ExternalName)
 apiVersion: v1
 kind: Service
 metadata:
   name: grafana-external
   namespace: llm  # In Kong's namespace for easier ingress
 spec:
-  type: ExternalName
-  externalName: grafana.observability.svc.cluster.local
+  type: ClusterIP
   ports:
   - port: 80
-    targetPort: 3000
+    targetPort: 3000  # Forward to Grafana's actual port
+    protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: grafana-external
+  namespace: llm
+subsets:
+- addresses:
+  - ip: 10.0.1.39  # IP of grafana pod
+  ports:
+  - port: 3000  # Grafana actual port
     protocol: TCP

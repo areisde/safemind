@@ -22,6 +22,6 @@ enable_gateway       = true   # Enable Kong gateway
 # Front Door Configuration (if enabled)
 # ────────────────────────────────────────────────
 # Note: Kong LoadBalancer IP is updated automatically by GitHub Actions after deployment
-frontdoor_origin_hostname    = "1.1.1.1"  # Placeholder - updated by workflow
+frontdoor_origin_hostname    = "74.161.132.199"  # Kong LoadBalancer IP
 
 

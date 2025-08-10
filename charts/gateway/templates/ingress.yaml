@@ -35,6 +35,13 @@ spec:
             name: guardrail
             port: 
               number: 80
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-external
+            port: 
+              number: 80
   tls:
   - hosts:
       - {{ .Values.ingress.host | default "agent.reisdematos.ch" | quote }}
