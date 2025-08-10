@@ -332,6 +332,14 @@ jobs:
               echo "Continuing without waiting for Grafana..."
             }
           
+          # Apply Grafana subpath configuration patch
+          echo "🔧 Applying Grafana subpath configuration..."
+          kubectl apply -f observability/grafana-config-patch.yaml || echo "⚠️ Grafana config patch failed"
+          
+          # Restart Grafana to pick up new configuration
+          echo "🔄 Restarting Grafana to apply configuration..."
+          kubectl rollout restart deployment/grafana -n observability || echo "⚠️ Grafana restart failed"
+          
           # Apply custom dashboards and configs (best effort)
           echo "🔍 Applying custom dashboards and configurations..."
           kubectl apply -f observability/grafana-llm-analytics-dashboard.yaml || echo "⚠️ LLM analytics dashboard apply failed"
@@ -401,19 +409,25 @@ jobs:
 
       - name: Deploy Gateway and Security
         run: |
+          # First, clean up any existing ingresses that might conflict
+          echo "🧹 Cleaning up existing Grafana ingress in observability namespace..."
+          kubectl delete ingress grafana-ingress -n observability --ignore-not-found=true
+          
           # Deploy Kong gateway configuration (ingress) using Helm
           echo "🔍 Deploying Kong gateway configurations..."
           if helm upgrade --install gateway charts/gateway/ \
               --namespace llm \
               --set ingress.host="agent.reisdematos.ch" \
-              --set ingress.tls.secretName="llm-tls"; then
+              --set ingress.tls.secretName="llm-tls" \
+              --force; then
             echo "✅ Gateway deployed successfully"
           else
             echo "⚠️ Gateway deployment failed, trying fallback..."
             # Fallback: try without custom domain (use default from values)
             helm upgrade --install gateway charts/gateway/ \
               --namespace llm \
-              --set ingress.tls.secretName="llm-tls" || echo "❌ Gateway deployment failed completely"
+              --set ingress.tls.secretName="llm-tls" \
+              --force || echo "❌ Gateway deployment failed completely"
           fi
           
           # Apply Kong observability configurations (now that Kong CRDs are available) - best effort
