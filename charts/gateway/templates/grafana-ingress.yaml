@@ -18,7 +18,3 @@ spec:
             name: grafana
             port: 
               number: 80
-  tls:
-  - hosts:
-      - {{ .Values.ingress.host | default "agent.reisdematos.ch" | quote }}
-    secretName: {{ .Values.ingress.tls.secretName | default "grafana-tls" | quote }}

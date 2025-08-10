@@ -1,3 +1,5 @@
+---
+# Grafana Configuration with Subpath Support
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -20,3 +22,18 @@ data:
     domain = 'agent.reisdematos.ch'
     root_url = 'https://agent.reisdematos.ch/grafana'
     serve_from_sub_path = true
+
+---
+# Grafana Service for Kong Ingress
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-external
+  namespace: llm  # In Kong's namespace for easier ingress
+spec:
+  type: ExternalName
+  externalName: grafana.observability.svc.cluster.local
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP

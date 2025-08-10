@@ -52,6 +52,40 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 }
 
+# Spot node pool for cost-effective auto-scaling
+resource "azurerm_kubernetes_cluster_node_pool" "spot" {
+  count                 = var.enable_spot_instances ? 1 : 0
+  name                  = "spot"
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.this.id
+  vm_size              = var.spot_node_size
+  
+  # Auto-scaling configuration
+  enable_auto_scaling = true
+  min_count          = 0  # Scale to zero when not needed
+  max_count          = var.spot_max_nodes
+  
+  # Spot instance configuration
+  priority        = "Spot"
+  eviction_policy = "Delete"
+  spot_max_price  = var.spot_max_price  # Max price per hour
+  
+  # Performance and cost optimization
+  os_disk_type    = "Ephemeral"  # Faster and cheaper storage
+  os_disk_size_gb = 30
+  
+  # Network configuration
+  vnet_subnet_id = var.subnet_id
+  
+  # Taints to ensure workloads opt-in to spot instances
+  node_taints = ["kubernetes.azure.com/scalesetpriority=spot:NoSchedule"]
+  
+  tags = {
+    provisioner = "terraform"
+    nodeType    = "spot"
+    costOptimized = "true"
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Outputs
 # ---------------------------------------------------------------------------

@@ -124,10 +124,63 @@ resource "azurerm_kubernetes_cluster" "main" {
   #   }
   # }
 
+  # Configure cluster autoscaler for better responsiveness
+  auto_scaler_profile {
+    balance_similar_node_groups      = false
+    expander                        = "least-waste"  # Choose cheapest nodes first
+    max_graceful_termination_sec    = "600"
+    max_unready_nodes              = 3
+    max_unready_percentage         = 45
+    new_pod_scale_up_delay         = "0s"           # Scale immediately when pods pending
+    scale_down_delay_after_add     = "5m"           # Wait 5 min before scaling down new nodes
+    scale_down_delay_after_delete  = "10s"          # Quick scale down after node deletion
+    scale_down_delay_after_failure = "3m"           # Retry quickly after failure
+    scan_interval                  = "10s"          # Check every 10 seconds
+    scale_down_utilization_threshold = 0.5          # Scale down if utilization < 50%
+    skip_nodes_with_local_storage  = false
+    skip_nodes_with_system_pods    = true           # Don't remove system nodes
+  }
+
   tags = {
     Environment = "dev"
     Project     = "mlops"
     Owner       = "reisdematos"
+  }
+}
+
+# ── Spot Node Pool for Cost-Effective Auto-Scaling ──────────────────────────
+resource "azurerm_kubernetes_cluster_node_pool" "spot" {
+  name                  = "spot"
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.main.id
+  vm_size              = "Standard_D2s_v3"  # 2 vCPU, 8GB RAM - minimum for Kubernetes
+  
+  # Auto-scaling configuration - scales to zero when not needed
+  enable_auto_scaling = true
+  min_count          = 0   # 🔥 KEY: Can scale to ZERO = $0 cost when idle
+  max_count          = 3   # Up to 3 extra nodes for burst capacity (smaller nodes)
+  
+  # Spot instance configuration (up to 90% cost savings)
+  priority        = "Spot"
+  eviction_policy = "Delete"
+  spot_max_price  = 0.04  # Max $0.04/hour (~$29/month per node) - D2s_v3 pricing
+  
+  # Performance and cost optimization
+  os_disk_type    = "Ephemeral"  # Faster and cheaper storage
+  os_disk_size_gb = 30
+  
+  # Network configuration
+  vnet_subnet_id = azurerm_subnet.aks.id
+  
+  # Taint spot nodes so workloads must explicitly opt-in
+  # This ensures critical system pods stay on regular nodes
+  node_taints = ["kubernetes.azure.com/scalesetpriority=spot:NoSchedule"]
+  
+  tags = {
+    Environment    = "dev"
+    Project        = "mlops"
+    Owner          = "reisdematos"
+    NodeType       = "spot"
+    CostOptimized  = "true"
   }
 }
 

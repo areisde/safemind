@@ -50,3 +50,28 @@ EOT
   type    = string
   default = ""
 }
+
+# Spot Instance Configuration
+variable "enable_spot_instances" {
+  description = "Enable spot instance node pool for cost optimization"
+  type        = bool
+  default     = true
+}
+
+variable "spot_node_size" {
+  description = "VM SKU for the spot node pool"
+  type        = string
+  default     = "Standard_D2s_v3"  # 2 vCPUs, 8GB RAM - widely available for spot instances
+}
+
+variable "spot_max_nodes" {
+  description = "Maximum number of spot nodes"
+  type        = number
+  default     = 2
+}
+
+variable "spot_max_price" {
+  description = "Maximum price per hour for spot instances (in USD). Set to -1 for market price"
+  type        = number
+  default     = 0.04  # ~$29/month per node maximum (D2s_v3 pricing)
+}
