@@ -130,22 +130,51 @@ jobs:
           helm repo add kong https://charts.konghq.com
           helm repo update
 
-      - name: Cleanup Existing Deployments
+      - name: Smart Cleanup and Preparation
         run: |
-          echo "🧹 Simple cleanup of potential conflicts..."
+          echo "🧹 Smart cleanup of potential conflicts..."
           
-          # Simple cleanup - just delete namespaces if they exist (everything gets recreated)
-          echo "Deleting llm namespace if it exists..."
-          kubectl delete namespace llm --ignore-not-found=true --timeout=120s || echo "LLM namespace cleanup completed"
+          # Check if llm namespace exists
+          if kubectl get namespace llm &>/dev/null; then
+            echo "📋 LLM namespace exists - performing targeted cleanup..."
+            
+            # Uninstall Helm releases first (cleaner than deleting namespace)
+            echo "Cleaning up Helm releases in llm namespace..."
+            helm uninstall kong -n llm --ignore-not-found || echo "Kong not found"
+            helm uninstall guardrail -n llm --ignore-not-found || echo "Guardrail not found"
+            helm uninstall llm-proxy -n llm --ignore-not-found || echo "LLM-proxy not found"
+            helm uninstall gateway -n llm --ignore-not-found || echo "Gateway not found"
+            
+            # Clean up remaining resources that might conflict
+            echo "Cleaning up potentially conflicting resources..."
+            kubectl delete serviceaccount --all -n llm --ignore-not-found || echo "ServiceAccounts cleanup completed"
+            kubectl delete secret ghcr-pull -n llm --ignore-not-found || echo "Secret cleanup completed"
+            kubectl delete configmap --all -n llm --ignore-not-found || echo "ConfigMaps cleanup completed"
+            
+            echo "⏳ Waiting for cleanup to complete (15s)..."
+            sleep 15
+          else
+            echo "🆕 Fresh LLM namespace - no cleanup needed"
+          fi
           
-          echo "Deleting observability namespace if it exists..."
-          kubectl delete namespace observability --ignore-not-found=true --timeout=120s || echo "Observability namespace cleanup completed"
+          # Handle observability namespace more conservatively
+          if kubectl get namespace observability &>/dev/null; then
+            echo "📊 Observability namespace exists - performing selective cleanup..."
+            
+            # Only clean up if there are issues, otherwise keep the stack running
+            FAILED_PODS=$(kubectl get pods -n observability --field-selector=status.phase=Failed --no-headers 2>/dev/null | wc -l || echo "0")
+            if [[ "$FAILED_PODS" -gt 0 ]]; then
+              echo "Found $FAILED_PODS failed pods, cleaning up observability..."
+              kubectl delete namespace observability --ignore-not-found=true --timeout=60s || echo "Observability cleanup completed"
+              sleep 15
+            else
+              echo "Observability stack healthy - keeping existing deployment"
+            fi
+          else
+            echo "🆕 Fresh observability namespace"
+          fi
           
-          # Wait a moment for cleanup to complete
-          echo "⏳ Waiting for cleanup to complete (30s)..."
-          sleep 30
-          
-          echo "✅ Cleanup completed successfully"
+          echo "✅ Smart cleanup completed"
 
       - name: Deploy Kong Gateway
         run: |
@@ -311,10 +340,10 @@ jobs:
 
       - name: Deploy MLOps Services
         run: |
-          # Ensure namespace exists and is clean
+          # Ensure namespace exists
           kubectl create namespace llm --dry-run=client -o yaml | kubectl apply -f -
           
-          # Recreate GHCR pull secret in case it was cleaned up
+          # Create or update GHCR pull secret
           kubectl create secret docker-registry ghcr-pull \
             --namespace llm \
             --docker-server=ghcr.io \
@@ -323,48 +352,52 @@ jobs:
             --docker-email=${{ github.actor }}@users.noreply.github.com \
             --dry-run=client -o yaml | kubectl apply -f -
           
-          # Deploy Guardrail service with conflict handling
+          # Deploy Guardrail service
           echo "🔍 Deploying Guardrail service..."
           helm upgrade --install guardrail charts/guardrail \
                --namespace llm \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/guardrail \
                --set image.tag=${{ github.sha }} \
                --set image.pullSecrets[0].name=ghcr-pull \
+               --set replicaCount=1 \
                --timeout 5m \
+               --wait \
                --force \
                 || {
             echo "⚠️ Guardrail deployment failed, checking status..."
             kubectl get pods -n llm
-            kubectl describe pods -n llm | grep -A 10 "guardrail" || echo "No guardrail pods found"
+            kubectl describe pods -n llm -l app.kubernetes.io/name=guardrail | tail -20
           }
           
-          # Deploy LLM Proxy service with conflict handling
+          # Deploy LLM Proxy service
           echo "🔍 Deploying LLM Proxy service..."
           helm upgrade --install llm-proxy charts/llm-proxy \
                --namespace llm \
                --set image.repository=ghcr.io/${{ github.repository_owner }}/llm-proxy \
                --set image.tag=${{ github.sha }} \
                --set image.pullSecrets[0].name=ghcr-pull \
+               --set replicaCount=1 \
                --set env.AZURE_OPENAI_ENDPOINT="${{ needs.infrastructure.outputs.azure_openai_endpoint }}" \
                --set env.AZURE_OPENAI_API_KEY="${{ needs.infrastructure.outputs.azure_openai_api_key }}" \
                --set env.AZURE_OPENAI_DEPLOYMENT_NAME="${{ needs.infrastructure.outputs.gpt4o_deployment_name }}" \
                --set env.AZURE_OPENAI_API_VERSION="2024-08-01-preview" \
                --timeout 5m \
+               --wait \
                --force \
                 || {
             echo "⚠️ LLM Proxy deployment failed, checking status..."
             kubectl get pods -n llm
-            kubectl describe pods -n llm | grep -A 10 "llm-proxy" || echo "No llm-proxy pods found"
+            kubectl describe pods -n llm -l app.kubernetes.io/name=llm-proxy | tail -20
           }
           
           # Show current pod status for debugging
           echo "📊 Current pod status in llm namespace:"
           kubectl get pods -n llm -o wide
           
-          # Wait for critical services with shorter timeout (best effort)
-          echo "⏳ Waiting for critical services (best effort)..."
-          kubectl wait --for=condition=available deployment/guardrail -n llm --timeout=180s || echo "⚠️ Guardrail still starting..."
-          kubectl wait --for=condition=available deployment/llm-proxy -n llm --timeout=180s || echo "⚠️ LLM Proxy still starting..."
+          # Verify services are ready
+          echo "⏳ Verifying services are ready..."
+          kubectl get deployment guardrail -n llm || echo "⚠️ Guardrail deployment not found"
+          kubectl get deployment llm-proxy -n llm || echo "⚠️ LLM-proxy deployment not found"
 
       - name: Deploy Gateway and Security
         run: |
