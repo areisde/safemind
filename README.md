@@ -1,13 +1,13 @@
-# MLOps Platform
+# SafeMind
 
-A comprehensive MLOps platform built on Kubernetes with observability, LLM analytics, and automated deployment.
+SafeMind is a comprehensive, production-ready MLOps platform designed for safe and responsible LLM operations. Built on Kubernetes, it provides enterprise-grade observability, security guardrails, and automated deployment for AI/ML workloads with a focus on LLM safety, compliance, and cost optimization.
 
 ## 🚀 Quick Start
 
 ```bash
 # 1. Clone the repository
-git clone <your-repo-url>
-cd mlops
+git clone https://github.com/areisde/safemind.git
+cd safemind
 
 # 2. Run automated setup (requires Azure CLI, Terraform, kubectl, Helm)
 ./scripts/setup-deployment.sh
@@ -20,16 +20,18 @@ cd mlops
 
 - **🔍 Observability Stack**: Prometheus, Grafana, Loki with custom dashboards
 - **🤖 LLM Analytics**: Token usage, cost tracking, energy consumption metrics
-- **🛡️ Security**: Network policies, rate limiting, request size controls
-- **📊 Monitoring**: Custom Grafana dashboards for MLOps metrics
+- **🛡️ Security Guardrails**: AI safety controls, content filtering, and compliance monitoring
+- **📊 Monitoring**: Custom Grafana dashboards for MLOps and LLM metrics
 - **🔄 CI/CD Ready**: GitHub Actions workflows for automated deployment
+- **💰 Cost Optimization**: Real-time cost tracking and budget alerts for LLM usage
+- **⚡ Energy Tracking**: Environmental impact monitoring for sustainable AI operations
 
 ## 🏗️ Architecture
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Kong Gateway  │────│   LLM Proxy     │────│   Guardrail     │
-│   (Ingress)     │    │   (FastAPI)     │    │   (FastAPI)     │
+│   (Ingress)     │    │   (Analytics)   │    │   (AI Safety)   │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                       │                       │
          └───────────────────────┼───────────────────────┘
@@ -54,8 +56,8 @@ cd mlops
 | Service | Purpose | Port | Metrics |
 |---------|---------|------|---------|
 | Kong Gateway | API Gateway & Ingress | 80/443 | Request routing, rate limiting |
-| LLM Proxy | LLM request handling | 8001 | Token usage, cost, energy |
-| Guardrail | Safety & compliance | 8002 | Request validation, filtering |
+| LLM Proxy | LLM request handling & analytics | 8001 | Token usage, cost, energy |
+| Guardrail | AI safety & compliance | 8002 | Request validation, content filtering |
 | Grafana | Dashboards & Visualization | 3000 | admin/prom-operator |
 | Prometheus | Metrics collection | 9090 | System metrics |
 | Loki | Log aggregation | 3100 | Centralized logging |
@@ -80,26 +82,31 @@ pytest tests/
 3. Update deployment scripts
 4. Add tests in `tests/`
 
-## 🔐 Security
+## 🔐 Security & Compliance
 
-- Secrets managed via Azure Key Vault
-- Network policies for east-west traffic
-- Rate limiting and request size controls
-- TLS termination at gateway
-- RBAC for Kubernetes access
+- **AI Safety Guardrails**: Content filtering, prompt injection detection, and response validation
+- **Azure Key Vault Integration**: Secure secrets management for LLM API keys
+- **Network Policies**: East-west traffic security within the Kubernetes cluster
+- **Rate Limiting & Request Controls**: Prevent abuse and manage API costs
+- **TLS Termination**: End-to-end encryption for all communications
+- **RBAC**: Role-based access control for Kubernetes resources
+- **Audit Logging**: Comprehensive logging for compliance and security monitoring
 
 ## 📊 Monitoring & Observability
 
 ### Custom Dashboards
-- **MLOps Overview**: Service health, request rates, error rates
+- **SafeMind Overview**: Service health, request rates, error rates
 - **LLM Analytics**: Token usage, cost analysis, energy consumption
+- **AI Safety Metrics**: Guardrail effectiveness, content filtering stats
 - **Infrastructure**: Kubernetes cluster metrics, resource usage
+- **Cost Management**: Real-time spend tracking and budget alerts
 
 ### Alerts (Production)
-- High error rates
-- Resource exhaustion
-- Service downtime
-- Cost thresholds exceeded
+- High error rates and service downtime
+- Resource exhaustion and scaling events
+- Cost thresholds exceeded for LLM usage
+- AI safety violations and guardrail triggers
+- Security policy violations
 
 ## 🚀 Deployment Environments
 
@@ -123,11 +130,10 @@ pytest tests/
 
 ## 📝 License
 
-[Your License Here]
+MIT License - See [LICENSE](LICENSE) file for details
 
 ## 🆘 Support
 
 - 📖 Check the [troubleshooting guide](docs/DEPLOYMENT.md#troubleshooting)
-- 🐛 [Open an issue](https://github.com/your-org/mlops/issues)
-- 💬 [Discussions](https://github.com/your-org/mlops/discussions)
-# Trigger new build to resolve GHCR permissions
+- 🐛 [Open an issue](https://github.com/areisde/safemind/issues)
+- 💬 [Discussions](https://github.com/areisde/safemind/discussions)

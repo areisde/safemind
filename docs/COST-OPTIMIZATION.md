@@ -85,7 +85,7 @@ az containerapp create \
   --name guardrail \
   --resource-group <your-rg> \
   --environment <your-env> \
-  --image ghcr.io/your-repo/guardrail:latest \
+  --image ghcr.io/areisde/guardrail:latest \
   --min-replicas 0 \
   --max-replicas 3 \
   --cpu 0.25 \
