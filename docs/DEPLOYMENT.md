@@ -15,8 +15,8 @@ This guide helps you deploy the MLOps platform to your own Azure subscription.
 ### 1. Clone and Setup
 
 ```bash
-git clone <your-repo>
-cd mlops
+git clone https://github.com/areisde/safemind.git
+cd safemind
 ```
 
 ### 2. Configure Azure Authentication
